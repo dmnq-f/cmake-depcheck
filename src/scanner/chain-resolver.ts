@@ -1,10 +1,12 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { findClosingParen, lineNumberAt, stripComments, tokenize } from '../cmake-utils.js';
+import { FetchContentDependency } from '../parser/types.js';
 
 export interface ChainResult {
   files: string[];
   warnings: string[];
+  vars: Map<string, string>;
 }
 
 function isModuleName(arg: string): boolean {
@@ -210,5 +212,32 @@ export function resolveChain(entryFile: string): ChainResult {
   }
 
   visit(path.resolve(entryFile), entryDir);
-  return { files, warnings };
+  return { files, warnings, vars };
+}
+
+/**
+ * Resolve ${VAR} references in dependency fields using a variable table.
+ * Mutates deps in place. Fields that can't be resolved are left as-is.
+ */
+export function resolveDependencyVariables(
+  deps: FetchContentDependency[],
+  vars: Map<string, string>,
+): void {
+  for (const dep of deps) {
+    if (dep.gitRepository?.includes('${')) {
+      dep.gitRepository = resolveVariables(dep.gitRepository, vars) ?? dep.gitRepository;
+    }
+    if (dep.gitTag?.includes('${')) {
+      dep.gitTag = resolveVariables(dep.gitTag, vars) ?? dep.gitTag;
+    }
+    if (dep.url?.includes('${')) {
+      dep.url = resolveVariables(dep.url, vars) ?? dep.url;
+    }
+    if (dep.urlHash?.includes('${')) {
+      dep.urlHash = resolveVariables(dep.urlHash, vars) ?? dep.urlHash;
+    }
+    if (dep.sourceSubdir?.includes('${')) {
+      dep.sourceSubdir = resolveVariables(dep.sourceSubdir, vars) ?? dep.sourceSubdir;
+    }
+  }
 }

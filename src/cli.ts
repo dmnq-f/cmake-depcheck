@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { Command } from 'commander';
 import { VERSION } from './index.js';
 import { parseCMakeContent } from './parser/index.js';
-import { scanDirectory, resolveChain } from './scanner/index.js';
+import { scanDirectory, resolveChain, resolveDependencyVariables } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
 
 function printResults(deps: FetchContentDependency[], basePath: string, ignoredCount = 0): void {
@@ -69,7 +69,7 @@ export function createProgram(): Command {
         }
       } else {
         basePath = path.dirname(targetPath);
-        const { files, warnings } = resolveChain(targetPath);
+        const { files, warnings, vars } = resolveChain(targetPath);
         for (const warning of warnings) {
           console.error(warning);
         }
@@ -77,6 +77,7 @@ export function createProgram(): Command {
           const content = fs.readFileSync(file, 'utf-8');
           allDeps = allDeps.concat(parseCMakeContent(content, file));
         }
+        resolveDependencyVariables(allDeps, vars);
       }
 
       let ignoredCount = 0;

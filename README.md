@@ -84,7 +84,7 @@ Ignored dependencies are still parsed but omitted from the results. The summary 
 
 ## Limitations
 
-- **Limited variable expansion.** Variables in `include()`/`add_subdirectory()` paths are resolved (built-ins and simple `set()` calls). However, `GIT_TAG ${SOME_VAR}` in dependency declarations is still captured literally — variable expansion only applies to chain resolution, not parsed values.
+- **Limited variable expansion.** When scanning from a specific file (chain mode), cmake-depcheck tracks `set()` calls and resolves `${VAR}` references in both file paths and dependency declarations. This covers common patterns like `set(GTEST_VERSION "v1.14.0")` followed by `GIT_TAG ${GTEST_VERSION}`. However, `CACHE` variables, `PARENT_SCOPE`, environment variables, and values computed via `string()`, `list()`, or `math()` are not resolved. In directory scan mode, no variable resolution is performed.
 - **No conditional evaluation.** Declarations inside `if()` blocks are always included regardless of the condition.
 - **No cross-file include resolution in directory mode.** Directory scanning finds files by walking the filesystem, not by tracing `include()` calls. Use file mode for precise chain-following.
 - **No version checking yet.** The tool currently reports what's declared but doesn't check upstream for newer versions. This is planned.
