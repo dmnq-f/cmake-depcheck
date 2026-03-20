@@ -74,10 +74,10 @@ Directory mode is useful for a quick overview or when your project structure doe
 
 ### Ignoring dependencies
 
-Use `--ignore` to exclude specific dependencies from the output by name (repeatable). Patterns are regular expressions matched case-insensitively:
+Use `--ignore` to exclude specific dependencies from the output by name (repeatable, case-insensitive). Names are matched exactly by default; use regex syntax for patterns:
 
 ```bash
-cmake-depcheck scan --path . --ignore ominous-dep --ignore "test*"
+cmake-depcheck scan --path . --ignore ominous-dep --ignore "stb.*"
 ```
 
 Ignored dependencies are still parsed but omitted from the results. The summary line indicates how many were filtered.

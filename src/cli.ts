@@ -85,7 +85,7 @@ export function createProgram(): Command {
 
       let ignoredCount = 0;
       if (options.ignore.length > 0) {
-        const patterns = options.ignore.map((p) => new RegExp(p, 'i'));
+        const patterns = options.ignore.map((p) => new RegExp(`^${p}$`, 'i'));
         const before = allDeps.length;
         allDeps = allDeps.filter((d) => !patterns.some((p) => p.test(d.name)));
         ignoredCount = before - allDeps.length;
