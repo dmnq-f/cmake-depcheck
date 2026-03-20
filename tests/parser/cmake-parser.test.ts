@@ -41,7 +41,9 @@ describe('cmake-parser', () => {
       expect(deps[0].url).toBe(
         'https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz',
       );
-      expect(deps[0].urlHash).toBe('SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d');
+      expect(deps[0].urlHash).toBe(
+        'SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d',
+      );
       expect(deps[0].gitRepository).toBeUndefined();
     });
   });
@@ -139,7 +141,9 @@ describe('cmake-parser', () => {
 
       expect(deps[1].name).toBe('json');
       expect(deps[1].sourceType).toBe('url');
-      expect(deps[1].urlHash).toBe('SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d');
+      expect(deps[1].urlHash).toBe(
+        'SHA256=d6c65aca6b1ed68e7a182f4757257b107ae403032760ed6ef121c9d55e81757d',
+      );
 
       expect(deps[2].name).toBe('lexy');
       expect(deps[2].sourceType).toBe('url');

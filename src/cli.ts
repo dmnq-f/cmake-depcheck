@@ -3,7 +3,7 @@ import * as path from 'node:path';
 import { Command } from 'commander';
 import { VERSION } from './index.js';
 import { parseCMakeContent } from './parser/index.js';
-import { scanDirectory } from './scanner/index.js';
+import { scanDirectory, resolveChain } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
 
 function printResults(deps: FetchContentDependency[], basePath: string): void {
@@ -64,8 +64,14 @@ export function createProgram(): Command {
         }
       } else {
         basePath = path.dirname(targetPath);
-        const content = fs.readFileSync(targetPath, 'utf-8');
-        allDeps = parseCMakeContent(content, targetPath);
+        const { files, warnings } = resolveChain(targetPath);
+        for (const warning of warnings) {
+          console.error(warning);
+        }
+        for (const file of files) {
+          const content = fs.readFileSync(file, 'utf-8');
+          allDeps = allDeps.concat(parseCMakeContent(content, file));
+        }
       }
 
       printResults(allDeps, basePath);
