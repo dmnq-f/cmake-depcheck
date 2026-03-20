@@ -43,10 +43,9 @@ describe('chain-resolver', () => {
     expect(rel).toContain('CMakeLists.txt');
     expect(rel).toContain(path.join('libs', 'real', 'CMakeLists.txt'));
 
-    expect(result.warnings).toHaveLength(3);
+    expect(result.warnings).toHaveLength(2);
     expect(result.warnings[0]).toMatch(/\$\{MY_LIB_DIR\}/);
     expect(result.warnings[1]).toMatch(/\$\{PROJECT_SOURCE_DIR\}/);
-    expect(result.warnings[2]).toMatch(/SomeModule/);
   });
 
   it('warns on missing files in chain-missing-file', () => {

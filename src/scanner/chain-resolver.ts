@@ -6,7 +6,7 @@ export interface ChainResult {
   warnings: string[];
 }
 
-const DIRECTIVE_PATTERN = /\b(include|add_subdirectory)\s*\(\s*([^)]+)\s*\)/gi;
+
 
 function isUnresolvable(arg: string): boolean {
   return arg.includes('${') || arg.includes('$<');
@@ -69,9 +69,9 @@ export function resolveChain(entryFile: string): ChainResult {
     const cleaned = stripComments(content);
     const dir = path.dirname(resolved);
 
+    const pattern = /\b(include|add_subdirectory)\s*\(\s*([^)]+)\s*\)/gi;
     let match: RegExpExecArray | null;
-    DIRECTIVE_PATTERN.lastIndex = 0;
-    while ((match = DIRECTIVE_PATTERN.exec(cleaned)) !== null) {
+    while ((match = pattern.exec(cleaned)) !== null) {
       const kind = match[1].toLowerCase();
       const arg = firstArg(match[2]);
       const line = lineNumberAt(content, match.index);
@@ -83,10 +83,6 @@ export function resolveChain(entryFile: string): ChainResult {
 
       if (kind === 'include') {
         if (isModuleName(arg)) {
-          const knownModules = ['fetchcontent', 'ctest', 'cpack', 'externalproject'];
-          if (!knownModules.includes(arg.toLowerCase())) {
-            warnings.push(`Warning: skipping unresolvable module '${arg}' in ${resolved}:${line}`);
-          }
           continue;
         }
 

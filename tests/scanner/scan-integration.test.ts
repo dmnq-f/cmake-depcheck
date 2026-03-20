@@ -38,11 +38,11 @@ describe('scan integration (chain mode)', () => {
     expect(spdlogDep.location.file).toMatch(/networking.*CMakeLists\.txt$/);
   });
 
-  it('chain-unresolvable: finds 2 deps + 3 warnings', () => {
+  it('chain-unresolvable: finds 2 deps + 2 warnings', () => {
     const { deps, warnings } = scanFile('chain-unresolvable');
 
     expect(deps).toHaveLength(2);
-    expect(warnings).toHaveLength(3);
+    expect(warnings).toHaveLength(2);
 
     const names = deps.map((d) => d.name).sort();
     expect(names).toEqual(['fmt', 'googletest']);
