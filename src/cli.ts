@@ -6,14 +6,22 @@ import { parseCMakeContent } from './parser/index.js';
 import { scanDirectory, resolveChain } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
 
-function printResults(deps: FetchContentDependency[], basePath: string): void {
+function printResults(
+  deps: FetchContentDependency[],
+  basePath: string,
+  ignoredCount = 0,
+): void {
   if (deps.length === 0) {
     console.log('No dependencies found.');
     return;
   }
 
   const fileSet = new Set(deps.map((d) => d.location.file));
-  console.log(`Found ${deps.length} dependencies in ${fileSet.size} file(s):\n`);
+  let summary = `Found ${deps.length} dependencies in ${fileSet.size} file(s)`;
+  if (ignoredCount > 0) {
+    summary += ` (${ignoredCount} omitted due to ignore configuration)`;
+  }
+  console.log(summary + ':\n');
 
   const nameWidth = Math.max(...deps.map((d) => d.name.length));
   const typeWidth = 3; // 'git' or 'url'
@@ -47,7 +55,8 @@ export function createProgram(): Command {
       collect,
       [],
     )
-    .action((options: { path: string; exclude: string[] }) => {
+    .option('--ignore <name>', 'Exclude a dependency by name (repeatable)', collect, [])
+    .action((options: { path: string; exclude: string[]; ignore: string[] }) => {
       const targetPath = path.resolve(options.path);
       const stat = fs.statSync(targetPath);
       const customExcludes = options.exclude.map((p) => new RegExp(p));
@@ -74,7 +83,15 @@ export function createProgram(): Command {
         }
       }
 
-      printResults(allDeps, basePath);
+      let ignoredCount = 0;
+      if (options.ignore.length > 0) {
+        const patterns = options.ignore.map((p) => new RegExp(p, 'i'));
+        const before = allDeps.length;
+        allDeps = allDeps.filter((d) => !patterns.some((p) => p.test(d.name)));
+        ignoredCount = before - allDeps.length;
+      }
+
+      printResults(allDeps, basePath, ignoredCount);
     });
 
   return program;

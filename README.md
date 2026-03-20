@@ -72,6 +72,16 @@ Exclusion patterns are regular expressions matched against directory names.
 
 Directory mode is useful for a quick overview or when your project structure doesn't follow standard `add_subdirectory()` patterns.
 
+### Ignoring dependencies
+
+Use `--ignore` to exclude specific dependencies from the output by name (repeatable). Patterns are regular expressions matched case-insensitively:
+
+```bash
+cmake-depcheck scan --path . --ignore ominous-dep --ignore "test*"
+```
+
+Ignored dependencies are still parsed but omitted from the results. The summary line indicates how many were filtered.
+
 ## Limitations
 
 - **No variable expansion.** `GIT_TAG ${SOME_VAR}` is captured literally. The tool can't resolve CMake variables.
