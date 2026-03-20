@@ -43,9 +43,10 @@ describe('chain-resolver', () => {
     expect(rel).toContain('CMakeLists.txt');
     expect(rel).toContain(path.join('libs', 'real', 'CMakeLists.txt'));
 
+    // MY_LIB_DIR and PROJECT_SOURCE_DIR now resolve; warnings are "file not found"
     expect(result.warnings).toHaveLength(2);
-    expect(result.warnings[0]).toMatch(/\$\{MY_LIB_DIR\}/);
-    expect(result.warnings[1]).toMatch(/\$\{PROJECT_SOURCE_DIR\}/);
+    expect(result.warnings[0]).toMatch(/libs\/real\/other/);
+    expect(result.warnings[1]).toMatch(/cmake\/magic\.cmake/);
   });
 
   it('warns on missing files in chain-missing-file', () => {
@@ -78,6 +79,71 @@ describe('chain-resolver', () => {
     expect(rel).toContain('CMakeLists.txt');
     expect(rel).toContain(path.join('cmake', 'a.cmake'));
     expect(rel).toContain(path.join('cmake', 'b.cmake'));
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('resolves set() variables in include paths in chain-variables', () => {
+    const result = resolveFixture('chain-variables');
+    const rel = relativePaths('chain-variables', result.files);
+
+    expect(rel).toHaveLength(2);
+    expect(rel).toContain('CMakeLists.txt');
+    expect(rel).toContain(path.join('cmake', 'modules', 'deps.cmake'));
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('resolves CMAKE_CURRENT_SOURCE_DIR in add_subdirectory scope', () => {
+    const result = resolveFixture('chain-builtin-vars');
+    const rel = relativePaths('chain-builtin-vars', result.files);
+
+    expect(rel).toHaveLength(3);
+    expect(rel).toContain('CMakeLists.txt');
+    expect(rel).toContain(path.join('libs', 'engine', 'CMakeLists.txt'));
+    expect(rel).toContain(path.join('libs', 'engine', 'cmake', 'engine-deps.cmake'));
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('distinguishes CMAKE_CURRENT_LIST_DIR from CMAKE_CURRENT_SOURCE_DIR in included files', () => {
+    const result = resolveFixture('chain-list-dir-vs-source-dir');
+    const rel = relativePaths('chain-list-dir-vs-source-dir', result.files);
+
+    expect(rel).toHaveLength(3);
+    expect(rel).toContain('CMakeLists.txt');
+    expect(rel).toContain(path.join('cmake', 'setup.cmake'));
+    expect(rel).toContain(path.join('cmake', 'deps', 'fetch.cmake'));
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('warns on truly unresolvable variables in chain-unresolvable-var', () => {
+    const result = resolveFixture('chain-unresolvable-var');
+    const rel = relativePaths('chain-unresolvable-var', result.files);
+
+    expect(rel).toHaveLength(1);
+    expect(rel).toContain('CMakeLists.txt');
+
+    expect(result.warnings).toHaveLength(2);
+    expect(result.warnings[0]).toMatch(/UNKNOWN_DIR/);
+    expect(result.warnings[1]).toMatch(/CACHED_PATH/);
+  });
+
+  it('resolves PROJECT_SOURCE_DIR in chain-project-source-dir', () => {
+    const result = resolveFixture('chain-project-source-dir');
+    const rel = relativePaths('chain-project-source-dir', result.files);
+
+    expect(rel).toHaveLength(2);
+    expect(rel).toContain('CMakeLists.txt');
+    expect(rel).toContain(path.join('cmake', 'deps.cmake'));
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('restores built-ins after recursive visit in chain-sequential-includes', () => {
+    const result = resolveFixture('chain-sequential-includes');
+    const rel = relativePaths('chain-sequential-includes', result.files);
+
+    expect(rel).toHaveLength(3);
+    expect(rel).toContain('CMakeLists.txt');
+    expect(rel).toContain(path.join('cmake', 'first.cmake'));
+    expect(rel).toContain(path.join('cmake', 'second.cmake'));
     expect(result.warnings).toHaveLength(0);
   });
 });

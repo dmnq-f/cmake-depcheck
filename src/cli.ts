@@ -6,11 +6,7 @@ import { parseCMakeContent } from './parser/index.js';
 import { scanDirectory, resolveChain } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
 
-function printResults(
-  deps: FetchContentDependency[],
-  basePath: string,
-  ignoredCount = 0,
-): void {
+function printResults(deps: FetchContentDependency[], basePath: string, ignoredCount = 0): void {
   if (deps.length === 0) {
     console.log('No dependencies found.');
     return;

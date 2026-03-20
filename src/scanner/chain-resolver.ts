@@ -1,53 +1,114 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import { findClosingParen, lineNumberAt, stripComments, tokenize } from '../cmake-utils.js';
 
 export interface ChainResult {
   files: string[];
   warnings: string[];
 }
 
-
-
-function isUnresolvable(arg: string): boolean {
-  return arg.includes('${') || arg.includes('$<');
-}
-
 function isModuleName(arg: string): boolean {
-  // A bare name with no path separators — relies on CMAKE_MODULE_PATH
   return !arg.includes('/') && !arg.includes('\\') && !arg.endsWith('.cmake');
 }
 
-function stripQuotes(arg: string): string {
-  if (arg.startsWith('"') && arg.endsWith('"')) {
-    return arg.slice(1, -1);
-  }
-  return arg;
-}
+/**
+ * Resolve ${VAR} references in a string using the variable table.
+ * Returns null if any variables remain unresolved.
+ */
+export function resolveVariables(
+  input: string,
+  vars: Map<string, string>,
+  depth = 0,
+): string | null {
+  if (depth > 10) return null;
+  if (!input.includes('${')) return input;
 
-function stripComments(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => {
-      const idx = line.indexOf('#');
-      return idx === -1 ? line : line.substring(0, idx);
-    })
-    .join('\n');
+  const result = input.replace(/\$\{(\w+)\}/g, (_match, varName: string) => {
+    const value = vars.get(varName);
+    if (value === undefined) return _match;
+    return value;
+  });
+
+  if (result.includes('${') && result !== input) {
+    return resolveVariables(result, vars, depth + 1);
+  }
+
+  return result.includes('${') ? null : result;
 }
 
 /**
- * Extract the first argument from a CMake function call body.
- * The body may contain multiple whitespace-separated args; we only want the first.
+ * Extract set() calls from file content and populate the variable table.
+ * Skips CACHE variables, PARENT_SCOPE, ENV{}, and multi-value set() calls.
  */
-function firstArg(body: string): string {
-  return stripQuotes(body.trim().split(/\s+/)[0]);
+function extractSetCalls(content: string, vars: Map<string, string>): void {
+  const cleaned = stripComments(content);
+  const pattern = /\bset\s*\(/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(cleaned)) !== null) {
+    const openIdx = cleaned.indexOf('(', match.index);
+    if (openIdx === -1) continue;
+
+    const closeIdx = findClosingParen(cleaned, openIdx);
+    if (closeIdx === -1) continue;
+
+    const body = cleaned.substring(openIdx + 1, closeIdx);
+    const tokens = tokenize(body);
+
+    if (tokens.length < 2) continue;
+
+    // Skip CACHE, PARENT_SCOPE, ENV{}
+    const upperTokens = tokens.map((t) => t.toUpperCase());
+    if (upperTokens.includes('CACHE')) continue;
+    if (upperTokens.includes('PARENT_SCOPE')) continue;
+    if (tokens[0].startsWith('ENV{')) continue;
+
+    const varName = tokens[0];
+    // Skip multi-value set() — only track single-value assignments
+    // The value is tokens[1]; anything beyond that is a second value (not a keyword)
+    if (tokens.length > 2) continue;
+
+    let value = tokens[1];
+
+    // Resolve any variable references in the value
+    const resolved = resolveVariables(value, vars);
+    if (resolved !== null) {
+      value = resolved;
+    }
+
+    vars.set(varName, value);
+  }
 }
 
-function lineNumberAt(content: string, index: number): number {
-  let line = 1;
-  for (let i = 0; i < index && i < content.length; i++) {
-    if (content[i] === '\n') line++;
+/**
+ * Detect project() calls and update PROJECT_SOURCE_DIR.
+ */
+function detectProjectCalls(
+  content: string,
+  currentSourceDir: string,
+  vars: Map<string, string>,
+): void {
+  const cleaned = stripComments(content);
+  if (/\bproject\s*\(/i.test(cleaned)) {
+    vars.set('PROJECT_SOURCE_DIR', currentSourceDir);
   }
-  return line;
+}
+
+/**
+ * Set built-in variables for the file being processed.
+ *
+ * For CMakeLists.txt entered via add_subdirectory():
+ *   CMAKE_CURRENT_SOURCE_DIR = the file's directory
+ *   CMAKE_CURRENT_LIST_DIR = the file's directory
+ *
+ * For .cmake files entered via include():
+ *   CMAKE_CURRENT_SOURCE_DIR = unchanged (the including CMakeLists.txt's directory)
+ *   CMAKE_CURRENT_LIST_DIR = the .cmake file's directory
+ */
+function setBuiltins(vars: Map<string, string>, filePath: string, currentSourceDir: string): void {
+  vars.set('CMAKE_CURRENT_SOURCE_DIR', currentSourceDir);
+  vars.set('CMAKE_CURRENT_LIST_DIR', path.dirname(filePath));
+  vars.set('CMAKE_CURRENT_LIST_FILE', filePath);
 }
 
 /**
@@ -58,8 +119,13 @@ export function resolveChain(entryFile: string): ChainResult {
   const visited = new Set<string>();
   const files: string[] = [];
   const warnings: string[] = [];
+  const vars = new Map<string, string>();
 
-  function visit(filePath: string): void {
+  const entryDir = path.dirname(path.resolve(entryFile));
+  vars.set('CMAKE_SOURCE_DIR', entryDir);
+  vars.set('PROJECT_SOURCE_DIR', entryDir);
+
+  function visit(filePath: string, currentSourceDir: string): void {
     const resolved = path.resolve(filePath);
     if (visited.has(resolved)) return;
     visited.add(resolved);
@@ -69,16 +135,44 @@ export function resolveChain(entryFile: string): ChainResult {
     const cleaned = stripComments(content);
     const dir = path.dirname(resolved);
 
-    const pattern = /\b(include|add_subdirectory)\s*\(\s*([^)]+)\s*\)/gi;
+    // Set built-in variables for this file
+    setBuiltins(vars, resolved, currentSourceDir);
+
+    // Detect project() calls
+    detectProjectCalls(content, currentSourceDir, vars);
+
+    // Extract set() calls before processing directives
+    extractSetCalls(content, vars);
+
+    const directivePattern = /\b(include|add_subdirectory)\s*\(/gi;
     let match: RegExpExecArray | null;
-    while ((match = pattern.exec(cleaned)) !== null) {
+    while ((match = directivePattern.exec(cleaned)) !== null) {
+      const openIdx = cleaned.indexOf('(', match.index);
+      if (openIdx === -1) continue;
+
+      const closeIdx = findClosingParen(cleaned, openIdx);
+      if (closeIdx === -1) continue;
+
+      const body = cleaned.substring(openIdx + 1, closeIdx);
+      const tokens = tokenize(body);
+      if (tokens.length === 0) continue;
+
       const kind = match[1].toLowerCase();
-      const arg = firstArg(match[2]);
+      let arg = tokens[0];
       const line = lineNumberAt(content, match.index);
 
-      if (isUnresolvable(arg)) {
-        warnings.push(`Warning: skipping unresolvable path '${arg}' in ${resolved}:${line}`);
-        continue;
+      // Try to resolve variables in the argument
+      if (arg.includes('${') || arg.includes('$<')) {
+        if (arg.includes('$<')) {
+          warnings.push(`Warning: skipping unresolvable path '${arg}' in ${resolved}:${line}`);
+          continue;
+        }
+        const resolvedArg = resolveVariables(arg, vars);
+        if (resolvedArg === null) {
+          warnings.push(`Warning: skipping unresolvable path '${arg}' in ${resolved}:${line}`);
+          continue;
+        }
+        arg = resolvedArg;
       }
 
       if (kind === 'include') {
@@ -96,21 +190,25 @@ export function resolveChain(entryFile: string): ChainResult {
           continue;
         }
 
-        visit(target);
+        // For include(), CMAKE_CURRENT_SOURCE_DIR stays at the current value
+        visit(target, currentSourceDir);
+        setBuiltins(vars, resolved, currentSourceDir);
       } else {
-        // add_subdirectory
-        const target = path.resolve(dir, arg, 'CMakeLists.txt');
+        // add_subdirectory — CMAKE_CURRENT_SOURCE_DIR becomes the subdirectory
+        const subdir = path.resolve(dir, arg);
+        const target = path.join(subdir, 'CMakeLists.txt');
 
         if (!fs.existsSync(target)) {
           warnings.push(`Warning: file not found '${target}' referenced in ${resolved}:${line}`);
           continue;
         }
 
-        visit(target);
+        visit(target, subdir);
+        setBuiltins(vars, resolved, currentSourceDir);
       }
     }
   }
 
-  visit(entryFile);
+  visit(path.resolve(entryFile), entryDir);
   return { files, warnings };
 }

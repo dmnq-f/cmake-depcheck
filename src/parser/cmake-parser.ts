@@ -1,76 +1,10 @@
 import { FetchContentDependency } from './types.js';
+import { findClosingParen, lineNumberAt, stripComments, tokenize } from '../cmake-utils.js';
 
 const SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
 /** Keywords we extract values for */
 const EXTRACT_KEYWORDS = ['GIT_REPOSITORY', 'GIT_TAG', 'URL', 'URL_HASH', 'SOURCE_SUBDIR'] as const;
-
-function findClosingParen(content: string, openIndex: number): number {
-  let depth = 1;
-  for (let i = openIndex + 1; i < content.length; i++) {
-    if (content[i] === '(') depth++;
-    else if (content[i] === ')') {
-      depth--;
-      if (depth === 0) return i;
-    }
-  }
-  return -1;
-}
-
-function lineNumberAt(content: string, index: number): number {
-  let line = 1;
-  for (let i = 0; i < index && i < content.length; i++) {
-    if (content[i] === '\n') line++;
-  }
-  return line;
-}
-
-function stripComments(text: string): string {
-  return text
-    .split('\n')
-    .map((line) => {
-      const idx = line.indexOf('#');
-      return idx === -1 ? line : line.substring(0, idx);
-    })
-    .join('\n');
-}
-
-/**
- * Tokenize CMake arguments. Handles quoted and unquoted args,
- * line continuations (backslash at EOL).
- */
-function tokenize(body: string): string[] {
-  const joined = body.replace(/\\\n/g, ' ');
-  const tokens: string[] = [];
-  let i = 0;
-
-  while (i < joined.length) {
-    if (/\s/.test(joined[i])) {
-      i++;
-      continue;
-    }
-
-    if (joined[i] === '"') {
-      let end = i + 1;
-      while (end < joined.length && joined[end] !== '"') {
-        if (joined[end] === '\\') end++;
-        end++;
-      }
-      tokens.push(joined.substring(i + 1, end));
-      i = end + 1;
-      continue;
-    }
-
-    let end = i;
-    while (end < joined.length && !/\s/.test(joined[end]) && joined[end] !== '"') {
-      end++;
-    }
-    tokens.push(joined.substring(i, end));
-    i = end;
-  }
-
-  return tokens;
-}
 
 function parseDeclaration(
   tokens: string[],

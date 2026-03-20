@@ -51,8 +51,8 @@ Chain resolution handles:
 - `include(cmake/deps.cmake)` — resolved relative to the file containing the call
 - `include(cmake/deps)` — `.cmake` extension appended automatically
 - `add_subdirectory(libs/networking)` — looks for `CMakeLists.txt` in the subdirectory
-
-Paths containing CMake variables (`${...}`) or generator expressions (`$<...>`) can't be resolved statically and produce a warning on stderr.
+- `${CMAKE_CURRENT_SOURCE_DIR}`, `${CMAKE_CURRENT_LIST_DIR}`, `${PROJECT_SOURCE_DIR}`, and other variables set via `set()` are resolved automatically
+- Generator expressions (`$<...>`) and variables that can't be resolved produce a warning on stderr
 
 ### Scan a directory
 
@@ -84,7 +84,7 @@ Ignored dependencies are still parsed but omitted from the results. The summary 
 
 ## Limitations
 
-- **No variable expansion.** `GIT_TAG ${SOME_VAR}` is captured literally. The tool can't resolve CMake variables.
+- **Limited variable expansion.** Variables in `include()`/`add_subdirectory()` paths are resolved (built-ins and simple `set()` calls). However, `GIT_TAG ${SOME_VAR}` in dependency declarations is still captured literally — variable expansion only applies to chain resolution, not parsed values.
 - **No conditional evaluation.** Declarations inside `if()` blocks are always included regardless of the condition.
 - **No cross-file include resolution in directory mode.** Directory scanning finds files by walking the filesystem, not by tracing `include()` calls. Use file mode for precise chain-following.
 - **No version checking yet.** The tool currently reports what's declared but doesn't check upstream for newer versions. This is planned.
