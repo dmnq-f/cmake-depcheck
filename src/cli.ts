@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import * as path from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { VERSION } from './index.js';
