@@ -1,5 +1,5 @@
 name: 'CMake Dependency Checker'
-description: 'Check CMake FetchContent dependencies for available updates'
+description: 'Scan CMake FetchContent dependencies for available updates with optional PRs.'
 author: 'dmnq-f'
 
 branding:
