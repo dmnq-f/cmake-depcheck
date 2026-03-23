@@ -23,6 +23,19 @@ jobs:
       - run: npm ci
       - run: npm run build:action
 
-      - uses: JasonEtco/build-and-tag-action@v2
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
+      - name: Attach dist and update tags
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          MAJOR=$(echo "$VERSION" | sed 's/\..*//')
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -f dist/action/
+          git commit -m "Build action bundle for $VERSION"
+
+          git tag -fa "$VERSION" -m "$VERSION"
+          git tag -fa "$MAJOR" -m "Update $MAJOR tag"
+
+          git push origin "$VERSION" --force
+          git push origin "$MAJOR" --force
