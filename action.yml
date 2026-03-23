@@ -27,6 +27,18 @@ inputs:
     description: 'Fail the workflow if any dependency has an available update'
     required: false
     default: 'false'
+  create-prs:
+    description: 'Create pull requests for available updates'
+    required: false
+    default: 'false'
+  dry-run:
+    description: 'Log what PRs would be created without actually creating them (requires create-prs: true)'
+    required: false
+    default: 'false'
+  token:
+    description: 'GitHub token for creating PRs. Use a GitHub App token or PAT if PR checks must trigger.'
+    required: false
+    default: '${{ github.token }}'
 
 outputs:
   has-updates:
@@ -37,6 +49,8 @@ outputs:
     description: 'Number of dependencies with available updates'
   result-json:
     description: 'Full scan result as JSON string'
+  prs-created:
+    description: 'Number of pull requests created'
 
 runs:
   using: 'node24'

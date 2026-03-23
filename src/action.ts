@@ -3,6 +3,7 @@ import * as core from '@actions/core';
 import { fileURLToPath } from 'node:url';
 import { scan } from './scan.js';
 import { UpdateCheckResult } from './checker/types.js';
+import { createPullRequests, type PrResult } from './pr/index.js';
 
 function parseMultiLineInput(raw: string): string[] {
   return raw
@@ -139,9 +140,53 @@ export async function run(): Promise<void> {
   core.setOutput('updates-available', String(updatesAvailable));
   core.setOutput('result-json', JSON.stringify(result));
 
+  // PR creation
+  const createPrs = core.getInput('create-prs') === 'true';
+  const dryRun = core.getInput('dry-run') === 'true';
+  let prsCreated = 0;
+
+  if (createPrs && result.updateResults) {
+    const updatable = result.updateResults.filter((r) => r.status === 'update-available');
+    if (updatable.length > 0) {
+      const token = core.getInput('token');
+      const prResults = await createPullRequests(result.updateResults, result.vars, token, dryRun);
+      prsCreated = prResults.filter((r) => r.prNumber !== undefined).length;
+      appendPrSummary(prResults, dryRun);
+    }
+  }
+
+  core.setOutput('prs-created', String(prsCreated));
+
   if (failOnUpdates && updatesAvailable > 0) {
     core.setFailed(`${updatesAvailable} dependency update(s) available`);
   }
+}
+
+function appendPrSummary(prResults: PrResult[], dryRun: boolean): void {
+  if (prResults.length === 0) return;
+
+  const prRows = prResults.map((r) => {
+    let status: string;
+    if (r.prNumber) {
+      status = `#${r.prNumber}`;
+    } else if (r.skipped) {
+      status = `skipped (${r.skipped})`;
+    } else if (r.error) {
+      status = `failed: ${r.error}`;
+    } else {
+      status = 'unknown';
+    }
+    return [r.name, status];
+  });
+
+  const heading = dryRun ? 'Pull Requests (dry run)' : 'Pull Requests';
+  core.summary.addHeading(heading, 3).addTable([
+    [
+      { data: 'Dependency', header: true },
+      { data: 'Result', header: true },
+    ],
+    ...prRows,
+  ]);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

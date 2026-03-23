@@ -46,6 +46,12 @@ vi.mock('../src/scan.js', () => ({
   scan: (...args: unknown[]) => mockScan(...args),
 }));
 
+// Mock PR creator
+const mockCreatePullRequests = vi.fn();
+vi.mock('../src/pr/index.js', () => ({
+  createPullRequests: (...args: unknown[]) => mockCreatePullRequests(...args),
+}));
+
 function makeDep(overrides: Partial<FetchContentDependency> = {}): FetchContentDependency {
   return {
     name: 'testlib',
@@ -91,6 +97,9 @@ async function runAction(): Promise<void> {
   }));
   vi.doMock('../src/scan.js', () => ({
     scan: (...args: unknown[]) => mockScan(...args),
+  }));
+  vi.doMock('../src/pr/index.js', () => ({
+    createPullRequests: (...args: unknown[]) => mockCreatePullRequests(...args),
   }));
   const { run } = await import('../src/action.js');
   await run().catch((error: Error) => {
@@ -363,6 +372,99 @@ describe('action', () => {
       await runAction();
 
       expect(mockSummaryWrite).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('pull request creation', () => {
+    it('does not invoke PR creation when create-prs is false (default)', async () => {
+      const results: UpdateCheckResult[] = [
+        {
+          dep: makeDep(),
+          status: 'update-available',
+          latestVersion: '2.0.0',
+          updateType: 'major',
+        },
+      ];
+      mockScan.mockResolvedValue(makeResult(results));
+      await runAction();
+
+      expect(mockCreatePullRequests).not.toHaveBeenCalled();
+    });
+
+    it('invokes PR creation when create-prs is true', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        switch (name) {
+          case 'create-prs':
+            return 'true';
+          case 'token':
+            return 'fake-token';
+          default:
+            return '';
+        }
+      });
+      const results: UpdateCheckResult[] = [
+        {
+          dep: makeDep(),
+          status: 'update-available',
+          latestVersion: '2.0.0',
+          updateType: 'major',
+        },
+      ];
+      mockScan.mockResolvedValue(makeResult(results));
+      mockCreatePullRequests.mockResolvedValue([
+        { name: 'testlib', prNumber: 42, prUrl: 'https://github.com/test/testrepo/pull/42' },
+      ]);
+      await runAction();
+
+      expect(mockCreatePullRequests).toHaveBeenCalledWith(results, undefined, 'fake-token', false);
+      expect(mockSetOutput).toHaveBeenCalledWith('prs-created', '1');
+    });
+
+    it('passes dry-run flag to createPullRequests', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        switch (name) {
+          case 'create-prs':
+            return 'true';
+          case 'dry-run':
+            return 'true';
+          case 'token':
+            return 'fake-token';
+          default:
+            return '';
+        }
+      });
+      const results: UpdateCheckResult[] = [
+        {
+          dep: makeDep(),
+          status: 'update-available',
+          latestVersion: '2.0.0',
+          updateType: 'major',
+        },
+      ];
+      mockScan.mockResolvedValue(makeResult(results));
+      mockCreatePullRequests.mockResolvedValue([{ name: 'testlib', skipped: 'dry-run' }]);
+      await runAction();
+
+      expect(mockCreatePullRequests).toHaveBeenCalledWith(results, undefined, 'fake-token', true);
+      expect(mockSetOutput).toHaveBeenCalledWith('prs-created', '0');
+    });
+
+    it('does not invoke PR creation when no updates available', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        switch (name) {
+          case 'create-prs':
+            return 'true';
+          case 'token':
+            return 'fake-token';
+          default:
+            return '';
+        }
+      });
+      const results: UpdateCheckResult[] = [{ dep: makeDep(), status: 'up-to-date' }];
+      mockScan.mockResolvedValue(makeResult(results));
+      await runAction();
+
+      expect(mockCreatePullRequests).not.toHaveBeenCalled();
     });
   });
 
