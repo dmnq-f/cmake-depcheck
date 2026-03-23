@@ -139,7 +139,7 @@ export function createProgram(): Command {
     )
     .option('--ignore <name>', 'Exclude a dependency by name (repeatable)', collect, [])
     .option('--scan-only', 'List dependencies without checking for updates')
-    .option('--json', 'Emit JSON to stdou (suppresses standard CLI output)')
+    .option('--json', 'Emit JSON to stdout (suppresses standard CLI output)')
     .option('--fail-on-updates', 'Exit with code 1 if any updates are available')
     .action(
       async (options: {
