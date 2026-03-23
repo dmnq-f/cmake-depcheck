@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
@@ -212,6 +213,6 @@ function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
   createProgram().parse();
 }
