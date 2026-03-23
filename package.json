@@ -3,8 +3,28 @@
   "version": "0.1.0",
   "description": "Check for updates to CMake FetchContent dependencies",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
   "bin": {
     "cmake-depcheck": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dmnq-f/cmake-depcheck.git"
+  },
+  "homepage": "https://github.com/dmnq-f/cmake-depcheck#readme",
+  "bugs": {
+    "url": "https://github.com/dmnq-f/cmake-depcheck/issues"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
