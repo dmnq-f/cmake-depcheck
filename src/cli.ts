@@ -1,13 +1,10 @@
-import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Command, CommanderError } from 'commander';
 import { VERSION } from './index.js';
-import { parseCMakeContent } from './parser/index.js';
-import { scanDirectory, resolveChain, resolveDependencyVariables } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
-import { checkForUpdates } from './checker/index.js';
 import { UpdateCheckResult } from './checker/types.js';
 import { formatJsonOutput } from './formatter/index.js';
+import { scan } from './scan.js';
 
 const STATUS_LABELS: Record<UpdateCheckResult['status'], string> = {
   'up-to-date': 'up to date',
@@ -159,94 +156,43 @@ export function createProgram(): Command {
           );
         }
 
-        const targetPath = path.resolve(options.path);
-        const stat = fs.statSync(targetPath);
-        const customExcludes = options.exclude.map((p) => new RegExp(p));
+        const onProgress =
+          !options.json && process.stderr.isTTY
+            ? (completed: number, total: number) => {
+                process.stderr.write(
+                  `Checking for updates... (${completed}/${total})\r`,
+                );
+              }
+            : undefined;
 
-        let allDeps: FetchContentDependency[] = [];
-        let basePath: string;
-        let scanMode: 'directory' | 'chain';
-        let filesScanned: string[];
-        let chainWarnings: string[] = [];
+        const result = await scan({
+          path: options.path,
+          excludePatterns: options.exclude.map((p) => new RegExp(p)),
+          ignoreNames: options.ignore,
+          scanOnly: options.scanOnly,
+          onProgress,
+        });
 
-        if (stat.isDirectory()) {
-          scanMode = 'directory';
-          basePath = targetPath;
-          filesScanned = scanDirectory(targetPath, customExcludes);
-          for (const file of filesScanned) {
-            const content = fs.readFileSync(file, 'utf-8');
-            allDeps = allDeps.concat(parseCMakeContent(content, file));
-          }
-        } else {
-          scanMode = 'chain';
-          basePath = path.dirname(targetPath);
-          const { files, warnings, vars } = resolveChain(targetPath);
-          filesScanned = files;
-          chainWarnings = warnings;
-          if (!options.json) {
-            for (const warning of warnings) {
-              console.error(warning);
-            }
-          }
-          for (const file of files) {
-            const content = fs.readFileSync(file, 'utf-8');
-            allDeps = allDeps.concat(parseCMakeContent(content, file));
-          }
-          resolveDependencyVariables(allDeps, vars);
-        }
-
-        let ignoredCount = 0;
-        if (options.ignore.length > 0) {
-          const patterns = options.ignore.map((p) => new RegExp(`^${p}$`, 'i'));
-          const before = allDeps.length;
-          allDeps = allDeps.filter((d) => !patterns.some((p) => p.test(d.name)));
-          ignoredCount = before - allDeps.length;
-        }
-
-        let updateResults: UpdateCheckResult[] | undefined;
-
-        if (options.scanOnly) {
-          if (!options.json) {
-            printResults(allDeps, basePath, ignoredCount);
-          }
-        } else {
-          const onProgress =
-            !options.json && process.stderr.isTTY
-              ? (completed: number, total: number) => {
-                  process.stderr.write(
-                    `Checking for updates... (${completed}/${total})\r`,
-                  );
-                }
-              : undefined;
-
-          updateResults = await checkForUpdates(allDeps, onProgress);
-
-          if (!options.json && process.stderr.isTTY) {
-            process.stderr.write('\r' + ' '.repeat(40) + '\r');
-          }
-
-          if (!options.json) {
-            printResults(allDeps, basePath, ignoredCount, updateResults);
-          }
+        if (onProgress && process.stderr.isTTY) {
+          process.stderr.write('\r' + ' '.repeat(40) + '\r');
         }
 
         if (options.json) {
           const output = formatJsonOutput({
-            deps: allDeps,
-            basePath,
-            ignoredCount,
-            scanMode,
+            ...result,
             entryPath: options.path,
-            filesScanned,
-            warnings: chainWarnings,
-            updateResults,
           });
           process.stdout.write(JSON.stringify(output, null, 2) + '\n');
+        } else {
+          for (const warning of result.warnings) {
+            console.error(warning);
+          }
+          printResults(result.deps, result.basePath, result.ignoredCount, result.updateResults);
         }
 
         if (
           options.failOnUpdates &&
-          updateResults?.some((r) => r.status === 'update-available')
+          result.updateResults?.some((r) => r.status === 'update-available')
         ) {
           throw new CommanderError(1, 'cmake-depcheck.updates_available', '');
         }

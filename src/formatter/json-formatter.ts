@@ -2,16 +2,10 @@ import * as path from 'node:path';
 import { VERSION } from '../index.js';
 import { FetchContentDependency } from '../parser/types.js';
 import { UpdateCheckResult } from '../checker/types.js';
+import { ScanResult } from '../scan.js';
 
-export interface JsonOutputOptions {
-  deps: FetchContentDependency[];
-  basePath: string;
-  ignoredCount: number;
-  scanMode: 'directory' | 'chain';
+export interface JsonOutputOptions extends ScanResult {
   entryPath: string;
-  filesScanned: string[];
-  warnings: string[];
-  updateResults?: UpdateCheckResult[];
   now?: Date;
 }
 
