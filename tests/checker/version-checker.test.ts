@@ -227,9 +227,7 @@ describe('checkForUpdates', () => {
       const results = await checkForUpdates([dep]);
       expect(results[0].status).toBe('update-available');
       expect(results[0].latestVersion).toBe('v1.3.0');
-      expect(results[0].updatedUrl).toBe(
-        'https://github.com/owner/repo/archive/v1.3.0.tar.gz',
-      );
+      expect(results[0].updatedUrl).toBe('https://github.com/owner/repo/archive/v1.3.0.tar.gz');
       expect(results[0].resolvedVersion).toBe('v1.2.3');
       // No HEAD validation for archive patterns
       expect(mockedVerifyUrlExists).not.toHaveBeenCalled();

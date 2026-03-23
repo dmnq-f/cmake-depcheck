@@ -58,11 +58,7 @@ export function extractGitHubUrlInfo(url: string): GitHubUrlInfo | null {
   const repoUrl = `https://github.com/${owner}/${repo}.git`;
 
   // Pattern: /owner/repo/releases/download/tag/filename
-  if (
-    segments.length >= 6 &&
-    segments[2] === 'releases' &&
-    segments[3] === 'download'
-  ) {
+  if (segments.length >= 6 && segments[2] === 'releases' && segments[3] === 'download') {
     const tag = segments[4];
     const filename = segments.slice(5).join('/');
     return { repoUrl, tag, pattern: 'releases-download', owner, repo, filename };

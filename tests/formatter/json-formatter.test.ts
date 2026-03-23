@@ -139,16 +139,21 @@ describe('formatJsonOutput', () => {
     ];
     const results: UpdateCheckResult[] = [
       makeResult(deps[0], { status: 'up-to-date' }),
-      makeResult(deps[1], { status: 'update-available', latestVersion: 'v2.0.0', updateType: 'major' }),
+      makeResult(deps[1], {
+        status: 'update-available',
+        latestVersion: 'v2.0.0',
+        updateType: 'major',
+      }),
       makeResult(deps[2], { status: 'pinned' }),
       makeResult(deps[3], { status: 'unpinned' }),
       makeResult(deps[4], { status: 'unsupported' }),
       makeResult(deps[5], { status: 'check-failed', error: 'timeout' }),
       makeResult(deps[6], { status: 'unresolved-variable' }),
     ];
-    const output = formatJsonOutput(
-      baseOptions({ deps, updateResults: results }),
-    ) as Record<string, unknown>;
+    const output = formatJsonOutput(baseOptions({ deps, updateResults: results })) as Record<
+      string,
+      unknown
+    >;
     const summary = output.summary as Record<string, unknown>;
     expect(summary).toEqual({
       total: 7,
@@ -211,9 +216,10 @@ describe('formatJsonOutput', () => {
   });
 
   it('empty project produces empty dependencies and zero summary', () => {
-    const output = formatJsonOutput(
-      baseOptions({ deps: [], updateResults: [] }),
-    ) as Record<string, unknown>;
+    const output = formatJsonOutput(baseOptions({ deps: [], updateResults: [] })) as Record<
+      string,
+      unknown
+    >;
     expect(output.dependencies).toEqual([]);
     const summary = output.summary as Record<string, unknown>;
     expect(summary.total).toBe(0);
@@ -249,9 +255,7 @@ describe('formatJsonOutput', () => {
   });
 
   it('defaults timestamp to now when now is omitted', () => {
-    const output = formatJsonOutput(
-      baseOptions({ now: undefined }),
-    ) as Record<string, unknown>;
+    const output = formatJsonOutput(baseOptions({ now: undefined })) as Record<string, unknown>;
     const meta = output.meta as Record<string, unknown>;
     const ts = meta.timestamp as string;
     expect(() => new Date(ts)).not.toThrow();

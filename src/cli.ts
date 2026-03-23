@@ -10,9 +10,9 @@ import { SHA_PATTERN } from './constants.js';
 const STATUS_LABELS: Record<UpdateCheckResult['status'], string> = {
   'up-to-date': 'up to date',
   'update-available': 'update available',
-  'pinned': 'pinned',
-  'unpinned': 'unpinned',
-  'unsupported': 'unsupported',
+  pinned: 'pinned',
+  unpinned: 'unpinned',
+  unsupported: 'unsupported',
   'check-failed': 'check failed',
   'unresolved-variable': 'unresolved var',
 };
@@ -69,7 +69,7 @@ function printResults(
       'up-to-date': 3,
       pinned: 4,
       unpinned: 5,
-      'unsupported': 6,
+      unsupported: 6,
     };
 
     const rows = deps
@@ -165,9 +165,7 @@ export function createProgram(): Command {
         const onProgress =
           !options.json && process.stderr.isTTY
             ? (completed: number, total: number) => {
-                process.stderr.write(
-                  `Checking for updates... (${completed}/${total})\r`,
-                );
+                process.stderr.write(`Checking for updates... (${completed}/${total})\r`);
               }
             : undefined;
 

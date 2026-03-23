@@ -127,7 +127,17 @@ function buildSummary(updateResults: UpdateCheckResult[]): JsonSummary {
 }
 
 export function formatJsonOutput(options: JsonOutputOptions): object {
-  const { deps, basePath, ignoredCount, scanMode, entryPath, filesScanned, warnings, updateResults, now } = options;
+  const {
+    deps,
+    basePath,
+    ignoredCount,
+    scanMode,
+    entryPath,
+    filesScanned,
+    warnings,
+    updateResults,
+    now,
+  } = options;
 
   const resultMap = updateResults
     ? new Map<FetchContentDependency, UpdateCheckResult>(updateResults.map((r) => [r.dep, r]))

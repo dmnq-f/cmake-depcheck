@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { extractGitHubUrlInfo, buildUpdatedUrl, verifyUrlExists } from '../../src/checker/github-url.js';
+import {
+  extractGitHubUrlInfo,
+  buildUpdatedUrl,
+  verifyUrlExists,
+} from '../../src/checker/github-url.js';
 
 describe('extractGitHubUrlInfo', () => {
   describe('releases-download pattern', () => {
@@ -73,9 +77,7 @@ describe('extractGitHubUrlInfo', () => {
 
   describe('archive pattern', () => {
     it('extracts info with .zip extension', () => {
-      const info = extractGitHubUrlInfo(
-        'https://github.com/owner/repo/archive/v1.2.3.zip',
-      );
+      const info = extractGitHubUrlInfo('https://github.com/owner/repo/archive/v1.2.3.zip');
       expect(info).toEqual({
         repoUrl: 'https://github.com/owner/repo.git',
         tag: 'v1.2.3',
@@ -88,9 +90,7 @@ describe('extractGitHubUrlInfo', () => {
 
     it('extracts SHA ref from archive URL', () => {
       const sha = 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2';
-      const info = extractGitHubUrlInfo(
-        `https://github.com/owner/repo/archive/${sha}.tar.gz`,
-      );
+      const info = extractGitHubUrlInfo(`https://github.com/owner/repo/archive/${sha}.tar.gz`);
       expect(info!.tag).toBe(sha);
       expect(info!.pattern).toBe('archive');
     });
@@ -102,15 +102,11 @@ describe('extractGitHubUrlInfo', () => {
     });
 
     it('GitLab URL', () => {
-      expect(
-        extractGitHubUrlInfo('https://gitlab.com/owner/repo/archive/v1.0.tar.gz'),
-      ).toBeNull();
+      expect(extractGitHubUrlInfo('https://gitlab.com/owner/repo/archive/v1.0.tar.gz')).toBeNull();
     });
 
     it('GitHub blob URL (not a download pattern)', () => {
-      expect(
-        extractGitHubUrlInfo('https://github.com/owner/repo/blob/main/README.md'),
-      ).toBeNull();
+      expect(extractGitHubUrlInfo('https://github.com/owner/repo/blob/main/README.md')).toBeNull();
     });
 
     it('GitHub repo page (no tag)', () => {
@@ -143,9 +139,7 @@ describe('buildUpdatedUrl', () => {
       'https://github.com/nlohmann/json/releases/download/v3.11.3/source.tar.xz',
     )!;
     const url = buildUpdatedUrl(info, 'v3.12.0');
-    expect(url).toBe(
-      'https://github.com/nlohmann/json/releases/download/v3.12.0/source.tar.xz',
-    );
+    expect(url).toBe('https://github.com/nlohmann/json/releases/download/v3.12.0/source.tar.xz');
   });
 
   it('archive-refs-tags: replaces tag and preserves extension', () => {
@@ -157,9 +151,7 @@ describe('buildUpdatedUrl', () => {
   });
 
   it('archive: replaces tag and preserves extension', () => {
-    const info = extractGitHubUrlInfo(
-      'https://github.com/owner/repo/archive/v1.2.3.zip',
-    )!;
+    const info = extractGitHubUrlInfo('https://github.com/owner/repo/archive/v1.2.3.zip')!;
     const url = buildUpdatedUrl(info, 'v1.3.0');
     expect(url).toBe('https://github.com/owner/repo/archive/v1.3.0.zip');
   });

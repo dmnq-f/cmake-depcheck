@@ -102,9 +102,7 @@ describe('scan()', () => {
   describe('update checking', () => {
     it('includes updateResults when scanOnly is false', async () => {
       mockedCheckForUpdates.mockImplementation(async (deps) => {
-        return deps.map(
-          (dep): UpdateCheckResult => ({ dep, status: 'up-to-date' }),
-        );
+        return deps.map((dep): UpdateCheckResult => ({ dep, status: 'up-to-date' }));
       });
 
       const result = await scan({ path: path.join(FIXTURES, 'basic-git') });
@@ -118,9 +116,7 @@ describe('scan()', () => {
         if (onProgress) {
           onProgress(1, deps.length);
         }
-        return deps.map(
-          (dep): UpdateCheckResult => ({ dep, status: 'up-to-date' }),
-        );
+        return deps.map((dep): UpdateCheckResult => ({ dep, status: 'up-to-date' }));
       });
 
       await scan({
