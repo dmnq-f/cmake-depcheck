@@ -200,7 +200,7 @@ describe('cli', () => {
     it('outputs valid JSON to stdout', async () => {
       await runScan('--path', path.join(FIXTURES, 'basic-git'), '--scan-only', '--json');
       const output = parseJsonOutput();
-      expect(output.schemaVersion).toBe(1);
+      expect(output.schemaVersion).toBe(2);
       expect(output.dependencies).toBeInstanceOf(Array);
     });
 
@@ -339,7 +339,7 @@ describe('cli', () => {
       expect((err as CommanderError).exitCode).toBe(1);
       // JSON should still be emitted before the error
       const output = parseJsonOutput();
-      expect(output.schemaVersion).toBe(1);
+      expect(output.schemaVersion).toBe(2);
     });
 
     it('exits 0 when all up-to-date (--json)', async () => {

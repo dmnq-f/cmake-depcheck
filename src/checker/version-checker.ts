@@ -35,7 +35,7 @@ export async function checkForUpdates(
   const needsCheck: FetchContentDependency[] = [];
   for (const dep of deps) {
     if (dep.sourceType === 'url') {
-      results.set(dep, { dep, status: 'url-source' });
+      results.set(dep, { dep, status: 'unsupported' });
     } else if (!dep.gitTag) {
       results.set(dep, { dep, status: 'unpinned' });
     } else if (dep.gitTagIsSha) {

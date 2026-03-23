@@ -57,7 +57,7 @@ describe('checkForUpdates', () => {
 
     const results = await checkForUpdates([dep]);
 
-    expect(results[0].status).toBe('url-source');
+    expect(results[0].status).toBe('unsupported');
     expect(mockedFetchRemoteTags).not.toHaveBeenCalled();
   });
 
@@ -133,7 +133,7 @@ describe('checkForUpdates', () => {
 
     expect(results).toHaveLength(3);
     expect(results[0].status).toBe('update-available');
-    expect(results[1].status).toBe('url-source');
+    expect(results[1].status).toBe('unsupported');
     expect(results[2].status).toBe('pinned');
   });
 

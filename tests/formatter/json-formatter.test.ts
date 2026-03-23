@@ -41,7 +41,7 @@ function baseOptions(overrides: Partial<JsonOutputOptions> = {}): JsonOutputOpti
 describe('formatJsonOutput', () => {
   it('sets schemaVersion to 1', () => {
     const output = formatJsonOutput(baseOptions()) as Record<string, unknown>;
-    expect(output.schemaVersion).toBe(1);
+    expect(output.schemaVersion).toBe(2);
   });
 
   it('includes meta with correct fields', () => {
@@ -142,7 +142,7 @@ describe('formatJsonOutput', () => {
       makeResult(deps[1], { status: 'update-available', latestVersion: 'v2.0.0', updateType: 'major' }),
       makeResult(deps[2], { status: 'pinned' }),
       makeResult(deps[3], { status: 'unpinned' }),
-      makeResult(deps[4], { status: 'url-source' }),
+      makeResult(deps[4], { status: 'unsupported' }),
       makeResult(deps[5], { status: 'check-failed', error: 'timeout' }),
       makeResult(deps[6], { status: 'unresolved-variable' }),
     ];
@@ -156,7 +156,7 @@ describe('formatJsonOutput', () => {
       updatesAvailable: 1,
       pinned: 1,
       unpinned: 1,
-      urlSource: 1,
+      unsupported: 1,
       checkFailed: 1,
       unresolvedVariable: 1,
     });
@@ -231,7 +231,7 @@ describe('formatJsonOutput', () => {
     expect(output.warnings).toEqual(['Warning: unresolvable path', 'Warning: file not found']);
   });
 
-  it('url-source dependencies include url but not git fields', () => {
+  it('unsupported dependencies include url but not git fields', () => {
     const dep = makeDep({
       name: 'zlib',
       sourceType: 'url',

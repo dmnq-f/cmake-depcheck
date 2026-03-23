@@ -7,7 +7,7 @@ export interface UpdateCheckResult {
     | 'update-available'
     | 'pinned'
     | 'unpinned'
-    | 'url-source'
+    | 'unsupported'
     | 'check-failed'
     | 'unresolved-variable';
   latestVersion?: string;

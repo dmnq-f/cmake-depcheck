@@ -35,7 +35,7 @@ interface JsonSummary {
   updatesAvailable: number;
   pinned: number;
   unpinned: number;
-  urlSource: number;
+  unsupported: number;
   checkFailed: number;
   unresolvedVariable: number;
 }
@@ -88,7 +88,7 @@ function buildSummary(updateResults: UpdateCheckResult[]): JsonSummary {
     updatesAvailable: 0,
     pinned: 0,
     unpinned: 0,
-    urlSource: 0,
+    unsupported: 0,
     checkFailed: 0,
     unresolvedVariable: 0,
   };
@@ -107,8 +107,8 @@ function buildSummary(updateResults: UpdateCheckResult[]): JsonSummary {
       case 'unpinned':
         summary.unpinned++;
         break;
-      case 'url-source':
-        summary.urlSource++;
+      case 'unsupported':
+        summary.unsupported++;
         break;
       case 'check-failed':
         summary.checkFailed++;
@@ -130,7 +130,7 @@ export function formatJsonOutput(options: JsonOutputOptions): object {
     : undefined;
 
   const output: Record<string, unknown> = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     meta: {
       version: VERSION,
       scanMode,

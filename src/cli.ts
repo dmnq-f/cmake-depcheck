@@ -11,7 +11,7 @@ const STATUS_LABELS: Record<UpdateCheckResult['status'], string> = {
   'update-available': 'update available',
   'pinned': 'pinned',
   'unpinned': 'unpinned',
-  'url-source': 'url source',
+  'unsupported': 'unsupported',
   'check-failed': 'check failed',
   'unresolved-variable': 'unresolved var',
 };
@@ -25,7 +25,7 @@ function statusLabel(result: UpdateCheckResult): string {
 
 function currentLabel(dep: FetchContentDependency, result?: UpdateCheckResult): string {
   if (result) {
-    if (result.status === 'url-source') return '(url)';
+    if (result.status === 'unsupported') return '(url)';
     if (result.status === 'unpinned') return '(none)';
   }
   return dep.sourceType === 'git' ? (dep.gitTag ?? '') : (dep.url ?? '');
@@ -63,7 +63,7 @@ function printResults(
       'up-to-date': 3,
       pinned: 4,
       unpinned: 5,
-      'url-source': 6,
+      'unsupported': 6,
     };
 
     const rows = deps
