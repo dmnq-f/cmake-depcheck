@@ -37,6 +37,7 @@ const ctx: GitHubContext = {
 
 const edit: FileEdit = {
   file: 'CMakeLists.txt',
+  line: 1,
   oldText: 'v10.2.1',
   newText: 'v12.1.0',
 };
@@ -159,7 +160,7 @@ describe('createUpdatePr', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), edit);
 
-    expect(result.error).toMatch(/Could not find/);
+    expect(result.error).toMatch(/Could not find.*on line/);
     expect(octokit.rest.git.createRef).not.toHaveBeenCalled();
   });
 

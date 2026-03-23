@@ -110,15 +110,20 @@ export async function createUpdatePr(
 
   const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
 
-  // 4. Apply text replacement
-  if (!content.includes(edit.oldText)) {
+  // 4. Apply line-scoped text replacement
+  const lines = content.split('\n');
+  const lineIdx = edit.line - 1;
+  const targetLine = lines[lineIdx];
+
+  if (targetLine === undefined || !targetLine.includes(edit.oldText)) {
     return {
       name,
-      error: `Could not find "${edit.oldText}" in ${edit.file} (file may have been modified)`,
+      error: `Could not find "${edit.oldText}" on line ${edit.line} of ${edit.file} (file may have been modified)`,
     };
   }
 
-  const newContent = content.replace(edit.oldText, edit.newText);
+  lines[lineIdx] = targetLine.replace(edit.oldText, edit.newText);
+  const newContent = lines.join('\n');
 
   // 5. Create branch
   await octokit.rest.git.createRef({
