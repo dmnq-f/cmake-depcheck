@@ -8,8 +8,7 @@ import {
   verifyUrlExists,
   GitHubUrlInfo,
 } from './github-url.js';
-
-const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+import { SHA_PATTERN } from '../constants.js';
 
 async function pool<T>(
   items: T[],

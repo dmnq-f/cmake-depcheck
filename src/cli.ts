@@ -5,6 +5,7 @@ import { FetchContentDependency } from './parser/types.js';
 import { UpdateCheckResult } from './checker/types.js';
 import { formatJsonOutput } from './formatter/index.js';
 import { scan } from './scan.js';
+import { SHA_PATTERN } from './constants.js';
 
 const STATUS_LABELS: Record<UpdateCheckResult['status'], string> = {
   'up-to-date': 'up to date',
@@ -22,8 +23,6 @@ function statusLabel(result: UpdateCheckResult): string {
   }
   return STATUS_LABELS[result.status];
 }
-
-const SHA_PATTERN = /^[0-9a-f]{40}$/i;
 
 function currentLabel(dep: FetchContentDependency, result?: UpdateCheckResult): string {
   if (result?.resolvedVersion) {

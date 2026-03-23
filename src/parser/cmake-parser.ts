@@ -1,7 +1,6 @@
 import { FetchContentDependency } from './types.js';
 import { findClosingParen, lineNumberAt, stripComments, tokenize } from '../cmake-utils.js';
-
-const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+import { SHA_PATTERN } from '../constants.js';
 
 /** Keywords we extract values for */
 const EXTRACT_KEYWORDS = ['GIT_REPOSITORY', 'GIT_TAG', 'URL', 'URL_HASH', 'SOURCE_SUBDIR'] as const;
