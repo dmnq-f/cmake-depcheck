@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Command, CommanderError } from 'commander';
 import { VERSION } from './index.js';
 import { FetchContentDependency } from './parser/types.js';
@@ -211,6 +212,6 @@ function collect(value: string, previous: string[]): string[] {
   return previous.concat([value]);
 }
 
-if (require.main === module) {
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
   createProgram().parse();
 }

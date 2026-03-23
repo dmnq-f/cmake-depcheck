@@ -1,0 +1,43 @@
+name: 'CMake Dependency Checker'
+description: 'Check CMake FetchContent dependencies for available updates'
+author: 'dmnq-f'
+
+branding:
+  icon: 'refresh-cw'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Path to CMakeLists.txt or project root directory'
+    required: false
+    default: 'CMakeLists.txt'
+  scan-only:
+    description: 'List dependencies without checking for updates'
+    required: false
+    default: 'false'
+  exclude:
+    description: 'Directory exclusion patterns, one per line'
+    required: false
+    default: ''
+  ignore:
+    description: 'Dependency names to exclude from results, one per line'
+    required: false
+    default: ''
+  fail-on-updates:
+    description: 'Fail the workflow if any dependency has an available update'
+    required: false
+    default: 'false'
+
+outputs:
+  has-updates:
+    description: 'Whether any dependency has an available update (true/false)'
+  total:
+    description: 'Total number of dependencies found'
+  updates-available:
+    description: 'Number of dependencies with available updates'
+  result-json:
+    description: 'Full scan result as JSON string'
+
+runs:
+  using: 'node24'
+  main: 'dist/action/index.js'
