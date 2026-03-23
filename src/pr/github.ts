@@ -111,18 +111,28 @@ export async function createUpdatePr(
   const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
 
   // 4. Apply line-scoped text replacement
+  // Search within [edit.line, edit.endLine] for the line containing the old text.
+  // For variable edits line === endLine (exact). For literal GIT_TAG/URL edits the
+  // range spans the FetchContent_Declare block.
   const lines = content.split('\n');
-  const lineIdx = edit.line - 1;
-  const targetLine = lines[lineIdx];
+  const searchStart = edit.line - 1;
+  const searchEnd = Math.min(edit.endLine, lines.length);
+  let matchIdx = -1;
+  for (let i = searchStart; i < searchEnd; i++) {
+    if (lines[i].includes(edit.oldText)) {
+      matchIdx = i;
+      break;
+    }
+  }
 
-  if (targetLine === undefined || !targetLine.includes(edit.oldText)) {
+  if (matchIdx === -1) {
     return {
       name,
-      error: `Could not find "${edit.oldText}" on line ${edit.line} of ${edit.file} (file may have been modified)`,
+      error: `Could not find "${edit.oldText}" in ${edit.file} between lines ${edit.line}–${edit.endLine} (file may have been modified)`,
     };
   }
 
-  lines[lineIdx] = targetLine.replace(edit.oldText, edit.newText);
+  lines[matchIdx] = lines[matchIdx].replace(edit.oldText, edit.newText);
   const newContent = lines.join('\n');
 
   // 5. Create branch

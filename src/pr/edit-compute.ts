@@ -4,9 +4,11 @@ import type { VariableInfo } from '../scanner/chain-resolver.js';
 export interface FileEdit {
   /** Absolute path to the file to edit */
   file: string;
-  /** 1-based line number where the replacement should occur */
+  /** 1-based line number where the search starts */
   line: number;
-  /** Original text to find (scoped to the relevant line) */
+  /** 1-based line number where the search ends (inclusive) */
+  endLine: number;
+  /** Original text to find within the line range */
   oldText: string;
   /** Replacement text */
   newText: string;
@@ -58,6 +60,7 @@ export function computeEdit(
     return {
       file: info.file,
       line: info.line,
+      endLine: info.line,
       oldText: info.value,
       newText: newVersion,
     };
@@ -71,6 +74,7 @@ export function computeEdit(
     return {
       file: dep.location.file,
       line: dep.location.startLine,
+      endLine: dep.location.endLine,
       oldText: dep.gitTag,
       newText: newVersion,
     };
@@ -92,6 +96,7 @@ export function computeEdit(
       return {
         file: info.file,
         line: info.line,
+        endLine: info.line,
         oldText: info.value,
         newText: newVersion,
       };
@@ -102,6 +107,7 @@ export function computeEdit(
       return {
         file: dep.location.file,
         line: dep.location.startLine,
+        endLine: dep.location.endLine,
         oldText: dep.url,
         newText: result.updatedUrl,
       };

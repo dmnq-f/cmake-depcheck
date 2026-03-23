@@ -38,6 +38,7 @@ const ctx: GitHubContext = {
 const edit: FileEdit = {
   file: 'CMakeLists.txt',
   line: 1,
+  endLine: 4,
   oldText: 'v10.2.1',
   newText: 'v12.1.0',
 };
@@ -90,8 +91,10 @@ describe('createUpdatePr', () => {
       .mockRejectedValueOnce({ status: 404 }) // branch check
       .mockResolvedValueOnce({ data: { object: { sha: 'base-sha-123' } } }); // default branch HEAD
 
-    // File content
-    const content = Buffer.from('GIT_TAG v10.2.1\n').toString('base64');
+    // File content — GIT_TAG is on line 3, after the FetchContent_Declare start (edit.line=1)
+    const content = Buffer.from(
+      'FetchContent_Declare(\n  freetype\n  GIT_TAG v10.2.1\n)\n',
+    ).toString('base64');
     octokit.rest.repos.getContent.mockResolvedValue({
       data: { content, sha: 'file-sha-456' },
     });
@@ -146,6 +149,100 @@ describe('createUpdatePr', () => {
     );
   });
 
+  it('finds GIT_TAG on a line after startLine within the block', async () => {
+    octokit.rest.git.getRef
+      .mockRejectedValueOnce({ status: 404 })
+      .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
+
+    // GIT_TAG is on line 4, but edit.line (startLine) is 1
+    const fileContent = [
+      'FetchContent_Declare(',
+      '  freetype',
+      '  GIT_REPOSITORY https://github.com/freetype/freetype.git',
+      '  GIT_TAG VER-2-14-2',
+      ')',
+    ].join('\n');
+    const content = Buffer.from(fileContent).toString('base64');
+    octokit.rest.repos.getContent.mockResolvedValue({
+      data: { content, sha: 'file-sha' },
+    });
+    octokit.rest.git.createRef.mockResolvedValue({});
+    octokit.rest.repos.createOrUpdateFileContents.mockResolvedValue({});
+    octokit.rest.issues.addLabels.mockResolvedValue({});
+    octokit.rest.pulls.create.mockResolvedValue({
+      data: { number: 10, html_url: 'https://github.com/testowner/testrepo/pull/10' },
+    });
+
+    const depEdit: FileEdit = {
+      file: 'CMakeLists.txt',
+      line: 1,
+      endLine: 5,
+      oldText: 'VER-2-14-2',
+      newText: 'VER-2-14-3',
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), depEdit);
+
+    expect(result.prNumber).toBe(10);
+
+    // Verify the committed content has the replacement on the correct line
+    const committedContent = Buffer.from(
+      octokit.rest.repos.createOrUpdateFileContents.mock.calls[0][0].content,
+      'base64',
+    ).toString('utf-8');
+    expect(committedContent).toContain('GIT_TAG VER-2-14-3');
+    expect(committedContent).not.toContain('VER-2-14-2');
+  });
+
+  it('does not match version string outside the block range', async () => {
+    octokit.rest.git.getRef
+      .mockRejectedValueOnce({ status: 404 })
+      .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
+
+    // Version "1.2.3" appears on line 1 (a comment), but the block is lines 3-6.
+    // The search should NOT match the comment.
+    const fileContent = [
+      '# Using version 1.2.3 of somelib', // line 1
+      '', // line 2
+      'FetchContent_Declare(', // line 3
+      '  somelib', // line 4
+      '  GIT_REPOSITORY https://x.git', // line 5
+      '  GIT_TAG 1.2.3', // line 6
+      ')', // line 7
+    ].join('\n');
+    const content = Buffer.from(fileContent).toString('base64');
+    octokit.rest.repos.getContent.mockResolvedValue({
+      data: { content, sha: 'file-sha' },
+    });
+    octokit.rest.git.createRef.mockResolvedValue({});
+    octokit.rest.repos.createOrUpdateFileContents.mockResolvedValue({});
+    octokit.rest.issues.addLabels.mockResolvedValue({});
+    octokit.rest.pulls.create.mockResolvedValue({
+      data: { number: 11, html_url: 'url' },
+    });
+
+    const depEdit: FileEdit = {
+      file: 'CMakeLists.txt',
+      line: 3,
+      endLine: 7,
+      oldText: '1.2.3',
+      newText: '2.0.0',
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), depEdit);
+    expect(result.prNumber).toBe(11);
+
+    // The comment on line 1 should be untouched
+    const committedContent = Buffer.from(
+      octokit.rest.repos.createOrUpdateFileContents.mock.calls[0][0].content,
+      'base64',
+    ).toString('utf-8');
+    expect(committedContent).toContain('# Using version 1.2.3 of somelib');
+    expect(committedContent).toContain('GIT_TAG 2.0.0');
+  });
+
   it('returns error when old text not found in file content', async () => {
     octokit.rest.git.getRef
       .mockRejectedValueOnce({ status: 404 })
@@ -159,7 +256,7 @@ describe('createUpdatePr', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), edit);
 
-    expect(result.error).toMatch(/Could not find.*on line/);
+    expect(result.error).toMatch(/Could not find.*between lines/);
     expect(octokit.rest.git.createRef).not.toHaveBeenCalled();
   });
 

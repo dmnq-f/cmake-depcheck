@@ -46,6 +46,7 @@ describe('computeEdit', () => {
       expect(edit).toEqual({
         file: '/project/CMakeLists.txt',
         line: 10,
+        endLine: 14,
         oldText: '10.2.1',
         newText: '12.1.0',
       });
@@ -61,6 +62,7 @@ describe('computeEdit', () => {
       expect(edit).toEqual({
         file: '/project/CMakeLists.txt',
         line: 10,
+        endLine: 14,
         oldText: 'v10.2.1',
         newText: 'v12.1.0',
       });
@@ -76,6 +78,7 @@ describe('computeEdit', () => {
       expect(edit).toEqual({
         file: '/project/CMakeLists.txt',
         line: 10,
+        endLine: 14,
         oldText: '10.2.1',
         newText: '12.1.0',
       });
@@ -106,6 +109,7 @@ describe('computeEdit', () => {
       expect(edit).toEqual({
         file: '/project/cmake/versions.cmake',
         line: 5,
+        endLine: 5,
         oldText: '10.2.1',
         newText: '12.1.0',
       });
@@ -125,6 +129,7 @@ describe('computeEdit', () => {
       expect(edit).toEqual({
         file: '/project/versions.cmake',
         line: 3,
+        endLine: 3,
         oldText: 'v1.2.3',
         newText: 'v2.0.0',
       });
@@ -168,6 +173,7 @@ describe('computeEdit', () => {
       expect(edit).toEqual({
         file: '/project/CMakeLists.txt',
         line: 10,
+        endLine: 14,
         oldText: 'https://github.com/owner/repo/archive/refs/tags/v1.0.0.tar.gz',
         newText: 'https://github.com/owner/repo/archive/refs/tags/v2.0.0.tar.gz',
       });
@@ -194,6 +200,7 @@ describe('computeEdit', () => {
       expect(edit).toEqual({
         file: '/project/versions.cmake',
         line: 2,
+        endLine: 2,
         oldText: 'v1.0.0',
         newText: 'v2.0.0',
       });
