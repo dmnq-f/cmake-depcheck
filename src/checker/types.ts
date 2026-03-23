@@ -13,4 +13,8 @@ export interface UpdateCheckResult {
   latestVersion?: string;
   updateType?: 'major' | 'minor' | 'patch';
   error?: string;
+  /** Replacement download URL when a URL-type dep has an update available */
+  updatedUrl?: string;
+  /** Version/tag resolved from the dep's URL (GitHub URL deps only) */
+  resolvedVersion?: string;
 }

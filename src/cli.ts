@@ -23,7 +23,14 @@ function statusLabel(result: UpdateCheckResult): string {
   return STATUS_LABELS[result.status];
 }
 
+const SHA_PATTERN = /^[0-9a-f]{40}$/i;
+
 function currentLabel(dep: FetchContentDependency, result?: UpdateCheckResult): string {
+  if (result?.resolvedVersion) {
+    return SHA_PATTERN.test(result.resolvedVersion)
+      ? result.resolvedVersion.slice(0, 8)
+      : result.resolvedVersion;
+  }
   if (result) {
     if (result.status === 'unsupported') return '(url)';
     if (result.status === 'unpinned') return '(none)';

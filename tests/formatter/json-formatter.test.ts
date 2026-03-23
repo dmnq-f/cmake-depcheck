@@ -257,4 +257,49 @@ describe('formatJsonOutput', () => {
     expect(() => new Date(ts)).not.toThrow();
     expect(new Date(ts).toISOString()).toBe(ts);
   });
+
+  it('includes updatedUrl in updateCheck when present', () => {
+    const dep = makeDep();
+    const result = makeResult(dep, {
+      status: 'update-available',
+      latestVersion: 'v2.0.0',
+      updateType: 'major',
+      updatedUrl: 'https://github.com/owner/repo/archive/v2.0.0.tar.gz',
+    });
+    const output = formatJsonOutput(
+      baseOptions({ deps: [dep], updateResults: [result] }),
+    ) as Record<string, unknown>;
+    const deps = output.dependencies as Record<string, unknown>[];
+    const check = deps[0].updateCheck as Record<string, unknown>;
+    expect(check.updatedUrl).toBe('https://github.com/owner/repo/archive/v2.0.0.tar.gz');
+  });
+
+  it('omits updatedUrl from updateCheck when not present', () => {
+    const dep = makeDep();
+    const result = makeResult(dep, {
+      status: 'update-available',
+      latestVersion: 'v2.0.0',
+      updateType: 'major',
+    });
+    const output = formatJsonOutput(
+      baseOptions({ deps: [dep], updateResults: [result] }),
+    ) as Record<string, unknown>;
+    const deps = output.dependencies as Record<string, unknown>[];
+    const check = deps[0].updateCheck as Record<string, unknown>;
+    expect(check).not.toHaveProperty('updatedUrl');
+  });
+
+  it('includes resolvedVersion in updateCheck when present', () => {
+    const dep = makeDep();
+    const result = makeResult(dep, {
+      status: 'up-to-date',
+      resolvedVersion: 'v1.2.3',
+    });
+    const output = formatJsonOutput(
+      baseOptions({ deps: [dep], updateResults: [result] }),
+    ) as Record<string, unknown>;
+    const deps = output.dependencies as Record<string, unknown>[];
+    const check = deps[0].updateCheck as Record<string, unknown>;
+    expect(check.resolvedVersion).toBe('v1.2.3');
+  });
 });

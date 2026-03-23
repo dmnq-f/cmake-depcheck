@@ -26,6 +26,8 @@ interface JsonDependency {
     latestVersion?: string;
     updateType?: string;
     error?: string;
+    updatedUrl?: string;
+    resolvedVersion?: string;
   };
 }
 
@@ -74,6 +76,8 @@ function buildDependency(
       if (result.status === 'check-failed' && result.error !== undefined) {
         check.error = result.error;
       }
+      if (result.updatedUrl !== undefined) check.updatedUrl = result.updatedUrl;
+      if (result.resolvedVersion !== undefined) check.resolvedVersion = result.resolvedVersion;
       entry.updateCheck = check;
     }
   }
