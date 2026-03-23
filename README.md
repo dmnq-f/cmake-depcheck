@@ -1,5 +1,7 @@
 # CMake Dependency Checker
 
+[![CI](https://github.com/dmnq-f/cmake-depcheck/actions/workflows/ci.yml/badge.svg)](https://github.com/dmnq-f/cmake-depcheck/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/cmake-depcheck)](https://www.npmjs.com/package/cmake-depcheck)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 Scans CMake files for `FetchContent_Declare` calls, checks upstream repositories for newer versions, and reports what's out of date. Think `npm outdated`, but for CMake's FetchContent dependencies.
