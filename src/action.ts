@@ -180,13 +180,16 @@ function appendPrSummary(prResults: PrResult[], dryRun: boolean): void {
   });
 
   const heading = dryRun ? 'Pull Requests (dry run)' : 'Pull Requests';
-  core.summary.addHeading(heading, 3).addTable([
-    [
-      { data: 'Dependency', header: true },
-      { data: 'Result', header: true },
-    ],
-    ...prRows,
-  ]);
+  core.summary
+    .addHeading(heading, 3)
+    .addTable([
+      [
+        { data: 'Dependency', header: true },
+        { data: 'Result', header: true },
+      ],
+      ...prRows,
+    ])
+    .write();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

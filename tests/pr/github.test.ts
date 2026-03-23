@@ -103,7 +103,6 @@ describe('createUpdatePr', () => {
     octokit.rest.repos.createOrUpdateFileContents.mockResolvedValue({});
 
     // Label
-    octokit.rest.issues.getLabel.mockResolvedValue({});
     octokit.rest.issues.addLabels.mockResolvedValue({});
 
     // PR creation
@@ -180,7 +179,7 @@ describe('createUpdatePr', () => {
     expect(result.error).toMatch(/Could not read file/);
   });
 
-  it('creates label when it does not exist', async () => {
+  it('does not call ensureLabel (handled by orchestrator)', async () => {
     octokit.rest.git.getRef
       .mockRejectedValueOnce({ status: 404 })
       .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
@@ -191,8 +190,6 @@ describe('createUpdatePr', () => {
     });
     octokit.rest.git.createRef.mockResolvedValue({});
     octokit.rest.repos.createOrUpdateFileContents.mockResolvedValue({});
-    octokit.rest.issues.getLabel.mockRejectedValue({ status: 404 });
-    octokit.rest.issues.createLabel.mockResolvedValue({});
     octokit.rest.issues.addLabels.mockResolvedValue({});
     octokit.rest.pulls.create.mockResolvedValue({
       data: { number: 1, html_url: 'https://github.com/testowner/testrepo/pull/1' },
@@ -200,6 +197,19 @@ describe('createUpdatePr', () => {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await createUpdatePr(octokit as any, ctx, makeUpdateResult(), edit);
+
+    expect(octokit.rest.issues.getLabel).not.toHaveBeenCalled();
+    expect(octokit.rest.issues.createLabel).not.toHaveBeenCalled();
+  });
+
+  it('ensureLabel creates label when it does not exist', async () => {
+    const { ensureLabel } = await import('../../src/pr/github.js');
+
+    octokit.rest.issues.getLabel.mockRejectedValue({ status: 404 });
+    octokit.rest.issues.createLabel.mockResolvedValue({});
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await ensureLabel(octokit as any, ctx);
 
     expect(octokit.rest.issues.createLabel).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'dependencies' }),

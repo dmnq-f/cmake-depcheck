@@ -51,7 +51,7 @@ async function branchExists(
   }
 }
 
-async function ensureLabel(octokit: Octokit, ctx: GitHubContext): Promise<void> {
+export async function ensureLabel(octokit: Octokit, ctx: GitHubContext): Promise<void> {
   try {
     await octokit.rest.issues.getLabel({
       owner: ctx.owner,
@@ -144,10 +144,7 @@ export async function createUpdatePr(
     branch,
   });
 
-  // 7. Ensure label exists
-  await ensureLabel(octokit, ctx);
-
-  // 8. Open PR
+  // 7. Open PR
   const currentVersion = dep.dep.gitTag ?? dep.resolvedVersion ?? 'unknown';
   const repoUrl = dep.dep.gitRepository ?? dep.dep.url ?? '';
 

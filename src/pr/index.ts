@@ -1,9 +1,10 @@
+import * as path from 'node:path';
 import * as core from '@actions/core';
 import { getOctokit, context } from '@actions/github';
 import type { UpdateCheckResult } from '../checker/types.js';
 import type { VariableInfo } from '../scanner/chain-resolver.js';
 import { computeEdit } from './edit-compute.js';
-import { createUpdatePr, type GitHubContext, type PrResult } from './github.js';
+import { createUpdatePr, ensureLabel, type GitHubContext, type PrResult } from './github.js';
 
 export type { PrResult } from './github.js';
 
@@ -36,6 +37,11 @@ export async function createPullRequests(
     defaultBranch: repo.default_branch,
   };
 
+  // Ensure 'dependencies' label exists once, before creating any PRs
+  if (!dryRun) {
+    await ensureLabel(octokit, ctx);
+  }
+
   const prResults: PrResult[] = [];
 
   for (const result of updatable) {
@@ -57,7 +63,7 @@ export async function createPullRequests(
 
     try {
       // Convert absolute file path to repo-relative path for the GitHub API
-      const repoRelativePath = edit.file.replace(`${process.cwd()}/`, '');
+      const repoRelativePath = path.relative(process.cwd(), edit.file);
       const apiEdit = { ...edit, file: repoRelativePath };
 
       const prResult = await createUpdatePr(octokit, ctx, result, apiEdit);

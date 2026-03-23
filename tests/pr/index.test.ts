@@ -19,10 +19,12 @@ vi.mock('@actions/github', () => ({
   },
 }));
 
-// Mock createUpdatePr
+// Mock github.js exports
 const mockCreateUpdatePr = vi.fn();
+const mockEnsureLabel = vi.fn();
 vi.mock('../../src/pr/github.js', () => ({
   createUpdatePr: (...args: unknown[]) => mockCreateUpdatePr(...args),
+  ensureLabel: (...args: unknown[]) => mockEnsureLabel(...args),
 }));
 
 // Import after mocking
@@ -56,6 +58,7 @@ function makeResult(overrides: Partial<UpdateCheckResult> = {}): UpdateCheckResu
 describe('createPullRequests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockEnsureLabel.mockResolvedValue(undefined);
     mockGetOctokit.mockReturnValue({
       rest: {
         repos: {

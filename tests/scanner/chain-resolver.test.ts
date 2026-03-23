@@ -90,6 +90,15 @@ describe('chain-resolver', () => {
     expect(rel).toContain('CMakeLists.txt');
     expect(rel).toContain(path.join('cmake', 'modules', 'deps.cmake'));
     expect(result.warnings).toHaveLength(0);
+
+    // VariableInfo shape: set() variables carry file/line metadata
+    const moduleDir = result.vars.get('MODULE_DIR');
+    expect(moduleDir).toBeDefined();
+    expect(moduleDir).toHaveProperty('value');
+    expect(moduleDir).toHaveProperty('file');
+    expect(moduleDir).toHaveProperty('line');
+    expect(moduleDir!.file).toContain('CMakeLists.txt');
+    expect(moduleDir!.line).toBe(5);
   });
 
   it('resolves CMAKE_CURRENT_SOURCE_DIR in add_subdirectory scope', () => {
