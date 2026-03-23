@@ -23,6 +23,12 @@ export interface FetchContentDependency {
   /** SOURCE_SUBDIR if specified */
   sourceSubdir?: string;
 
+  /** Original GIT_TAG value before variable resolution, e.g. "${FMT_VERSION}" */
+  gitTagRaw?: string;
+
+  /** Original URL value before variable resolution */
+  urlRaw?: string;
+
   /** Location in the source file for potential future auto-fix */
   location: {
     file: string;

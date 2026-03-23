@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { parseCMakeContent } from './parser/index.js';
 import { scanDirectory, resolveChain, resolveDependencyVariables } from './scanner/index.js';
+import type { VariableInfo } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
 import { checkForUpdates } from './checker/index.js';
 import { UpdateCheckResult } from './checker/types.js';
@@ -34,6 +35,8 @@ export interface ScanResult {
   ignoredCount: number;
   /** Update check results, absent when scanOnly is true */
   updateResults?: UpdateCheckResult[];
+  /** Variable table from chain resolution (absent in directory scan mode) */
+  vars?: Map<string, VariableInfo>;
 }
 
 export async function scan(options: ScanOptions): Promise<ScanResult> {
@@ -45,6 +48,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
   let scanMode: 'directory' | 'chain';
   let filesScanned: string[];
   let warnings: string[] = [];
+  let vars: Map<string, VariableInfo> | undefined;
 
   if (stat.isDirectory()) {
     scanMode = 'directory';
@@ -60,6 +64,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     const chain = resolveChain(targetPath);
     filesScanned = chain.files;
     warnings = chain.warnings;
+    vars = chain.vars;
     for (const file of chain.files) {
       const content = fs.readFileSync(file, 'utf-8');
       deps = deps.concat(parseCMakeContent(content, file));
@@ -94,5 +99,6 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     warnings,
     ignoredCount,
     updateResults,
+    vars,
   };
 }

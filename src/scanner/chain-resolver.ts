@@ -3,14 +3,32 @@ import * as path from 'node:path';
 import { findClosingParen, lineNumberAt, stripComments, tokenize } from '../cmake-utils.js';
 import { FetchContentDependency } from '../parser/types.js';
 
+export interface VariableInfo {
+  value: string;
+  /** Absolute path to the file containing the set() call */
+  file: string;
+  /** Line number of the set() call */
+  line: number;
+}
+
 export interface ChainResult {
   files: string[];
   warnings: string[];
-  vars: Map<string, string>;
+  vars: Map<string, VariableInfo>;
 }
 
 function isModuleName(arg: string): boolean {
   return !arg.includes('/') && !arg.includes('\\') && !arg.endsWith('.cmake');
+}
+
+/** Look up a variable's string value from either map shape. */
+function varValue(
+  vars: Map<string, string> | Map<string, VariableInfo>,
+  name: string,
+): string | undefined {
+  const entry = vars.get(name) as string | VariableInfo | undefined;
+  if (entry === undefined) return undefined;
+  return typeof entry === 'string' ? entry : entry.value;
 }
 
 /**
@@ -19,14 +37,14 @@ function isModuleName(arg: string): boolean {
  */
 export function resolveVariables(
   input: string,
-  vars: Map<string, string>,
+  vars: Map<string, string> | Map<string, VariableInfo>,
   depth = 0,
 ): string | null {
   if (depth > 10) return null;
   if (!input.includes('${')) return input;
 
   const result = input.replace(/\$\{(\w+)\}/g, (_match, varName: string) => {
-    const value = vars.get(varName);
+    const value = varValue(vars, varName);
     if (value === undefined) return _match;
     return value;
   });
@@ -42,7 +60,7 @@ export function resolveVariables(
  * Extract set() calls from file content and populate the variable table.
  * Skips CACHE variables, PARENT_SCOPE, ENV{}, and multi-value set() calls.
  */
-function extractSetCalls(content: string, vars: Map<string, string>): void {
+function extractSetCalls(content: string, vars: Map<string, VariableInfo>, filePath: string): void {
   const cleaned = stripComments(content);
   const pattern = /\bset\s*\(/gi;
   let match: RegExpExecArray | null;
@@ -78,7 +96,8 @@ function extractSetCalls(content: string, vars: Map<string, string>): void {
       value = resolved;
     }
 
-    vars.set(varName, value);
+    const line = lineNumberAt(content, match.index);
+    vars.set(varName, { value, file: filePath, line });
   }
 }
 
@@ -88,11 +107,16 @@ function extractSetCalls(content: string, vars: Map<string, string>): void {
 function detectProjectCalls(
   content: string,
   currentSourceDir: string,
-  vars: Map<string, string>,
+  filePath: string,
+  vars: Map<string, VariableInfo>,
 ): void {
   const cleaned = stripComments(content);
   if (/\bproject\s*\(/i.test(cleaned)) {
-    vars.set('PROJECT_SOURCE_DIR', currentSourceDir);
+    vars.set('PROJECT_SOURCE_DIR', {
+      value: currentSourceDir,
+      file: filePath,
+      line: lineNumberAt(content, cleaned.search(/\bproject\s*\(/i)),
+    });
   }
 }
 
@@ -107,10 +131,15 @@ function detectProjectCalls(
  *   CMAKE_CURRENT_SOURCE_DIR = unchanged (the including CMakeLists.txt's directory)
  *   CMAKE_CURRENT_LIST_DIR = the .cmake file's directory
  */
-function setBuiltins(vars: Map<string, string>, filePath: string, currentSourceDir: string): void {
-  vars.set('CMAKE_CURRENT_SOURCE_DIR', currentSourceDir);
-  vars.set('CMAKE_CURRENT_LIST_DIR', path.dirname(filePath));
-  vars.set('CMAKE_CURRENT_LIST_FILE', filePath);
+function setBuiltins(
+  vars: Map<string, VariableInfo>,
+  filePath: string,
+  currentSourceDir: string,
+): void {
+  const info = (value: string): VariableInfo => ({ value, file: filePath, line: 0 });
+  vars.set('CMAKE_CURRENT_SOURCE_DIR', info(currentSourceDir));
+  vars.set('CMAKE_CURRENT_LIST_DIR', info(path.dirname(filePath)));
+  vars.set('CMAKE_CURRENT_LIST_FILE', info(filePath));
 }
 
 /**
@@ -121,11 +150,13 @@ export function resolveChain(entryFile: string): ChainResult {
   const visited = new Set<string>();
   const files: string[] = [];
   const warnings: string[] = [];
-  const vars = new Map<string, string>();
+  const vars = new Map<string, VariableInfo>();
 
   const entryDir = path.dirname(path.resolve(entryFile));
-  vars.set('CMAKE_SOURCE_DIR', entryDir);
-  vars.set('PROJECT_SOURCE_DIR', entryDir);
+  const entryPath = path.resolve(entryFile);
+  const builtin = (value: string): VariableInfo => ({ value, file: entryPath, line: 0 });
+  vars.set('CMAKE_SOURCE_DIR', builtin(entryDir));
+  vars.set('PROJECT_SOURCE_DIR', builtin(entryDir));
 
   function visit(filePath: string, currentSourceDir: string): void {
     const resolved = path.resolve(filePath);
@@ -141,10 +172,10 @@ export function resolveChain(entryFile: string): ChainResult {
     setBuiltins(vars, resolved, currentSourceDir);
 
     // Detect project() calls
-    detectProjectCalls(content, currentSourceDir, vars);
+    detectProjectCalls(content, currentSourceDir, resolved, vars);
 
     // Extract set() calls before processing directives
-    extractSetCalls(content, vars);
+    extractSetCalls(content, vars, resolved);
 
     const directivePattern = /\b(include|add_subdirectory)\s*\(/gi;
     let match: RegExpExecArray | null;
@@ -221,16 +252,18 @@ export function resolveChain(entryFile: string): ChainResult {
  */
 export function resolveDependencyVariables(
   deps: FetchContentDependency[],
-  vars: Map<string, string>,
+  vars: Map<string, VariableInfo>,
 ): void {
   for (const dep of deps) {
     if (dep.gitRepository?.includes('${')) {
       dep.gitRepository = resolveVariables(dep.gitRepository, vars) ?? dep.gitRepository;
     }
     if (dep.gitTag?.includes('${')) {
+      dep.gitTagRaw = dep.gitTag;
       dep.gitTag = resolveVariables(dep.gitTag, vars) ?? dep.gitTag;
     }
     if (dep.url?.includes('${')) {
+      dep.urlRaw = dep.url;
       dep.url = resolveVariables(dep.url, vars) ?? dep.url;
     }
     if (dep.urlHash?.includes('${')) {
