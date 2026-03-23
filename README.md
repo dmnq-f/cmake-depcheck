@@ -8,7 +8,17 @@ Scans CMake files for `FetchContent_Declare` calls, checks upstream repositories
 
 ## Quick Start
 
-Point it at your top-level `CMakeLists.txt`:
+### GitHub Action
+
+```yaml
+- uses: dmnq-f/cmake-depcheck@v1
+  with:
+    path: CMakeLists.txt
+    fail-on-updates: true # Default: false
+    create-prs: true # Default: false
+```
+
+### CLI
 
 ```bash
 npx cmake-depcheck scan --path ./CMakeLists.txt
@@ -24,9 +34,78 @@ Found 4 dependencies in 3 file(s):
   json        v3.11.3  v3.12.0  minor update  CMakeLists.txt:19
 ```
 
-This follows the chain of `include()` and `add_subdirectory()` calls from your entry file, checks each dependency for newer tags, and reports the result. Both git-based and GitHub URL-based dependencies are checked.
+Both methods follow `include()` and `add_subdirectory()` chains from the entry file. Git-based and GitHub URL-based dependencies are checked.
 
-## Installation
+## GitHub Action
+
+### Basic usage
+
+```yaml
+name: Dependency Check
+on:
+  schedule:
+    - cron: '0 8 * * 1'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dmnq-f/cmake-depcheck@v1
+        with:
+          path: CMakeLists.txt
+          # Additional options see below
+```
+
+### Auto-update PRs
+
+Set `create-prs: true` to open one pull request per outdated dependency. Each PR updates the version pin in the CMake source file — either the `GIT_TAG` value directly or the originating `set()` variable.
+
+**Token and repository settings:**
+* Ensure your repository settings allow for automatic PR creation, see the corresponding [Managing GitHub Actions settings for a repository](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests) section.
+* PRs created with the default `GITHUB_TOKEN` will not trigger `on: pull_request` workflows — this is a [GitHub restriction](https://docs.github.com/en/actions/using-workflows/triggering-a-workflow#triggering-a-workflow-from-a-workflow) to prevent recursive runs. If your branch protection requires status checks, use a GitHub App token or PAT instead:
+
+```yaml
+permissions:
+  contents: write
+  pull-requests: write
+
+steps:
+  - uses: actions/checkout@v6
+  - uses: dmnq-f/cmake-depcheck@v1
+    with:
+      path: CMakeLists.txt
+      create-prs: true
+      token: ${{ secrets.PAT }}
+```
+
+### Inputs
+
+| Input | Description | Default |
+|---|---|---|
+| `path` | Path to CMakeLists.txt (recommended, will follow project hierarchy) or project root directory (simple directory tree traversal) | `CMakeLists.txt` |
+| `scan-only` | List dependencies without checking for updates | `false` |
+| `exclude` | Directory exclusion patterns, one per line | |
+| `ignore` | Dependency names to exclude from results, one per line | |
+| `fail-on-updates` | Fail the workflow if any dependency has an available update | `false` |
+| `create-prs` | Create pull requests for available updates | `false` |
+| `dry-run` | Log what PRs would be created without actually creating them (requires `create-prs: true`) | `false` |
+| `token` | GitHub token for creating PRs | `${{ github.token }}` |
+
+### Outputs
+
+| Output | Description |
+|---|---|
+| `has-updates` | Whether any dependency has an available update (`true`/`false`) |
+| `total` | Total number of dependencies found |
+| `updates-available` | Number of dependencies with available updates |
+| `result-json` | Full scan result as JSON string |
+| `prs-created` | Number of pull requests created |
+
+## CLI
+
+### Installation
 
 Requires Node.js 24+.
 
@@ -39,8 +118,6 @@ Or run directly with `npx`:
 ```bash
 npx cmake-depcheck scan --path ./CMakeLists.txt
 ```
-
-## Usage
 
 ### Scan from a CMakeLists.txt (recommended)
 
