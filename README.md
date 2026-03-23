@@ -34,8 +34,6 @@ Found 4 dependencies in 3 file(s):
   json        v3.11.3  v3.12.0  minor update  CMakeLists.txt:19
 ```
 
-Both methods follow `include()` and `add_subdirectory()` chains from the entry file. Git-based and GitHub URL-based dependencies are checked.
-
 ## GitHub Action
 
 ### Basic usage
