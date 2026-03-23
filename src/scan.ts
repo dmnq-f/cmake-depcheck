@@ -69,7 +69,13 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
 
   let ignoredCount = 0;
   if (options.ignoreNames && options.ignoreNames.length > 0) {
-    const patterns = options.ignoreNames.map((name) => new RegExp(`^${name}$`, 'i'));
+    const patterns = options.ignoreNames.map((name) => {
+      try {
+        return new RegExp(`^${name}$`, 'i');
+      } catch {
+        throw new Error(`Invalid --ignore pattern "${name}": not a valid regular expression`);
+      }
+    });
     const before = deps.length;
     deps = deps.filter((d) => !patterns.some((p) => p.test(d.name)));
     ignoredCount = before - deps.length;

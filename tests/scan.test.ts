@@ -77,6 +77,26 @@ describe('scan()', () => {
       });
       expect(result.ignoredCount).toBe(1);
     });
+
+    it('supports regex patterns in ignore names', async () => {
+      const result = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        ignoreNames: ['google.*'],
+        scanOnly: true,
+      });
+      expect(result.ignoredCount).toBe(1);
+      expect(result.deps[0].name).toBe('fmt');
+    });
+
+    it('throws on invalid regex pattern', async () => {
+      await expect(
+        scan({
+          path: path.join(FIXTURES, 'basic-git'),
+          ignoreNames: ['foo('],
+          scanOnly: true,
+        }),
+      ).rejects.toThrow('Invalid --ignore pattern');
+    });
   });
 
   describe('update checking', () => {
