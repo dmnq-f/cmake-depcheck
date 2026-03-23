@@ -19,10 +19,10 @@ Found 4 dependencies in 3 file(s):
   googletest  v1.17.0  v1.17.0  up to date    CMakeLists.txt:7
   fmt         10.2.1   12.1.0   major update  cmake/deps.cmake:2
   spdlog      v1.13.0  v1.17.0  minor update  libs/logging/CMakeLists.txt:4
-  json        (url)    —        url source    CMakeLists.txt:19
+  json        v3.11.3  v3.12.0  minor update  CMakeLists.txt:19
 ```
 
-This follows the chain of `include()` and `add_subdirectory()` calls from your entry file, checks each git-based dependency for newer tags, and reports the result.
+This follows the chain of `include()` and `add_subdirectory()` calls from your entry file, checks each dependency for newer tags, and reports the result. Both git-based and GitHub URL-based dependencies are checked.
 
 ## Installation
 
@@ -91,17 +91,43 @@ cmake-depcheck scan --path . --ignore ominous-dep --ignore "stb.*"
 
 Ignored dependencies are still parsed but omitted from the results. The summary line indicates how many were filtered.
 
+### JSON output
+
+Use `--json` to get machine-readable output instead of the human-readable table. All JSON goes to stdout; warnings and progress go to stderr.
+
+```bash
+cmake-depcheck scan --path ./CMakeLists.txt --json
+```
+
+The JSON output includes dependency details, update check results, scan metadata, and aggregate summary counts.
+
+Combine with `--scan-only` to get a machine-readable inventory without hitting the network:
+
+```bash
+cmake-depcheck scan --path . --scan-only --json
+```
+
+### Failing on updates
+
+Use `--fail-on-updates` to exit with code 1 when any dependency has an available update. Works with both human-readable and JSON output:
+
+```bash
+cmake-depcheck scan --path . --fail-on-updates
+cmake-depcheck scan --path . --json --fail-on-updates
+```
+
 ## Limitations
 
 - **Limited variable expansion.** When scanning from a specific file (chain mode), cmake-depcheck tracks `set()` calls and resolves `${VAR}` references in both file paths and dependency declarations. This covers common patterns like `set(GTEST_VERSION "v1.14.0")` followed by `GIT_TAG ${GTEST_VERSION}`. However, `CACHE` variables, `PARENT_SCOPE`, environment variables, and values computed via `string()`, `list()`, or `math()` are not resolved. In directory scan mode, no variable resolution is performed.
 - **No conditional evaluation.** Declarations inside `if()` blocks are always included regardless of the condition.
 - **No cross-file include resolution in directory mode.** Directory scanning finds files by walking the filesystem, not by tracing `include()` calls. Use file mode for precise chain-following.
-- **Best-effort version comparison.** Semver tags (with or without `v` prefix) are compared accurately. Non-semver tags (e.g., `VER-2-14-0`) use prefix-based heuristics. SHA-pinned and URL-based dependencies are reported but not checked.
+- **Best-effort version comparison.** Semver tags (with or without `v` prefix) are compared accurately. Non-semver tags (e.g., `VER-2-14-0`) use prefix-based heuristics. SHA-pinned dependencies are reported as `pinned` but not checked for updates.
+- **URL dependency support is GitHub-only.** URL-based dependencies pointing to GitHub releases or archives are checked for updates using the same tag comparison as git deps. Non-GitHub URLs (e.g., custom mirrors, GitLab) are reported as `unsupported`.
 
 ## Building from Source
 
 ```bash
-git clone https://github.com/user/cmake-depcheck.git
+git clone https://github.com/dmnq-f/cmake-depcheck.git
 cd cmake-depcheck
 npm install
 npm run build
