@@ -1,4 +1,5 @@
 import * as path from 'node:path';
+import { CommanderError } from 'commander';
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { VERSION } from '../src/index.js';
 import { createProgram } from '../src/cli.js';
@@ -20,28 +21,42 @@ const FIXTURES = path.join(__dirname, 'fixtures');
 
 let logLines: string[];
 let errorLines: string[];
+let stdoutChunks: string[];
 let origLog: typeof console.log;
 let origError: typeof console.error;
+let origStdoutWrite: typeof process.stdout.write;
 
 beforeEach(() => {
   logLines = [];
   errorLines = [];
+  stdoutChunks = [];
   origLog = console.log;
   origError = console.error;
+  origStdoutWrite = process.stdout.write;
   console.log = (msg: string) => logLines.push(msg);
   console.error = (msg: string) => errorLines.push(msg);
+  process.stdout.write = ((chunk: string) => {
+    stdoutChunks.push(chunk);
+    return true;
+  }) as typeof process.stdout.write;
   vi.resetAllMocks();
 });
 
 afterEach(() => {
   console.log = origLog;
   console.error = origError;
+  process.stdout.write = origStdoutWrite;
 });
 
 async function runScan(...args: string[]) {
   const program = createProgram();
   program.exitOverride();
   await program.parseAsync(['node', 'cmake-depcheck', 'scan', ...args]);
+}
+
+function parseJsonOutput(): Record<string, unknown> {
+  const raw = stdoutChunks.join('');
+  return JSON.parse(raw) as Record<string, unknown>;
 }
 
 describe('cli', () => {
@@ -178,6 +193,175 @@ describe('cli', () => {
 
       await runScan('--path', path.join(FIXTURES, 'basic-git'));
       expect(errorLines.some((l) => l.includes('network error'))).toBe(true);
+    });
+  });
+
+  describe('--json', () => {
+    it('outputs valid JSON to stdout', async () => {
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--scan-only', '--json');
+      const output = parseJsonOutput();
+      expect(output.schemaVersion).toBe(1);
+      expect(output.dependencies).toBeInstanceOf(Array);
+    });
+
+    it('suppresses human-readable table output', async () => {
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--scan-only', '--json');
+      expect(logLines).toHaveLength(0);
+    });
+
+    it('--json --scan-only omits updateCheck and summary', async () => {
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--scan-only', '--json');
+      const output = parseJsonOutput();
+      expect(output).not.toHaveProperty('summary');
+      const deps = output.dependencies as Record<string, unknown>[];
+      for (const dep of deps) {
+        expect(dep).not.toHaveProperty('updateCheck');
+      }
+    });
+
+    it('--json with update checking includes updateCheck and summary', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'up-to-date',
+          }),
+        );
+      });
+
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--json');
+      const output = parseJsonOutput();
+      expect(output).toHaveProperty('summary');
+      const deps = output.dependencies as Record<string, unknown>[];
+      for (const dep of deps) {
+        expect(dep).toHaveProperty('updateCheck');
+      }
+    });
+
+    it('meta.timestamp is a valid ISO 8601 string', async () => {
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--scan-only', '--json');
+      const output = parseJsonOutput();
+      const meta = output.meta as Record<string, unknown>;
+      const ts = meta.timestamp as string;
+      expect(new Date(ts).toISOString()).toBe(ts);
+    });
+
+    it('warnings appear in JSON warnings array (chain-mode)', async () => {
+      await runScan(
+        '--path',
+        path.join(FIXTURES, 'chain-unresolvable', 'CMakeLists.txt'),
+        '--scan-only',
+        '--json',
+      );
+      const output = parseJsonOutput();
+      const warnings = output.warnings as string[];
+      expect(warnings).toHaveLength(2);
+      // Warnings should be in JSON, not stderr
+      expect(errorLines).toHaveLength(0);
+    });
+
+    it('meta.scanMode is "directory" for directory input', async () => {
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--scan-only', '--json');
+      const output = parseJsonOutput();
+      const meta = output.meta as Record<string, unknown>;
+      expect(meta.scanMode).toBe('directory');
+    });
+
+    it('meta.scanMode is "chain" for file input', async () => {
+      await runScan(
+        '--path',
+        path.join(FIXTURES, 'chain-basic', 'CMakeLists.txt'),
+        '--scan-only',
+        '--json',
+      );
+      const output = parseJsonOutput();
+      const meta = output.meta as Record<string, unknown>;
+      expect(meta.scanMode).toBe('chain');
+    });
+  });
+
+  describe('--fail-on-updates', () => {
+    it('exits 1 when updates are available (human-readable)', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: 'v99.0.0',
+            updateType: 'major',
+          }),
+        );
+      });
+
+      const err = await runScan(
+        '--path',
+        path.join(FIXTURES, 'basic-git'),
+        '--fail-on-updates',
+      ).catch((e) => e);
+      expect(err).toBeInstanceOf(CommanderError);
+      expect((err as CommanderError).exitCode).toBe(1);
+    });
+
+    it('exits 0 when all up-to-date (human-readable)', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'up-to-date',
+          }),
+        );
+      });
+
+      await expect(
+        runScan('--path', path.join(FIXTURES, 'basic-git'), '--fail-on-updates'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('exits 1 when updates are available (--json)', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: 'v99.0.0',
+            updateType: 'major',
+          }),
+        );
+      });
+
+      const err = await runScan(
+        '--path',
+        path.join(FIXTURES, 'basic-git'),
+        '--json',
+        '--fail-on-updates',
+      ).catch((e) => e);
+      expect(err).toBeInstanceOf(CommanderError);
+      expect((err as CommanderError).exitCode).toBe(1);
+      // JSON should still be emitted before the error
+      const output = parseJsonOutput();
+      expect(output.schemaVersion).toBe(1);
+    });
+
+    it('exits 0 when all up-to-date (--json)', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'up-to-date',
+          }),
+        );
+      });
+
+      await expect(
+        runScan('--path', path.join(FIXTURES, 'basic-git'), '--json', '--fail-on-updates'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('--scan-only --fail-on-updates emits warning and exits 0', async () => {
+      await expect(
+        runScan('--path', path.join(FIXTURES, 'basic-git'), '--scan-only', '--fail-on-updates'),
+      ).resolves.toBeUndefined();
+      expect(errorLines.some((l) => l.includes('--fail-on-updates has no effect'))).toBe(true);
     });
   });
 });
