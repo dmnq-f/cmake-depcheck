@@ -152,6 +152,36 @@ describe('cmake-parser', () => {
     });
   });
 
+  describe('FetchContent_Populate (direct form)', () => {
+    it('parses direct-form populate calls and ignores simple-form triggers', () => {
+      const deps = parseFixture('fetchcontent-populate');
+      expect(deps).toHaveLength(4);
+
+      // Direct populate with git source
+      expect(deps[0].name).toBe('spdlog');
+      expect(deps[0].sourceType).toBe('git');
+      expect(deps[0].gitRepository).toBe('https://github.com/gabime/spdlog.git');
+      expect(deps[0].gitTag).toBe('v1.17.0');
+
+      // Direct populate with URL source
+      expect(deps[1].name).toBe('json');
+      expect(deps[1].sourceType).toBe('url');
+      expect(deps[1].url).toBe(
+        'https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz',
+      );
+
+      // Regular declare still works
+      expect(deps[2].name).toBe('fmt');
+      expect(deps[2].sourceType).toBe('git');
+      expect(deps[2].gitTag).toBe('12.1.0');
+
+      // Bare declare with no source keywords — still reported (not filtered)
+      expect(deps[3].name).toBe('orphan_dep');
+
+      // Simple-form FetchContent_Populate(fmt) was NOT included — still 4 deps, not 5
+    });
+  });
+
   describe('location tracking', () => {
     it('records correct start and end lines', () => {
       const deps = parseFixture('basic-git');

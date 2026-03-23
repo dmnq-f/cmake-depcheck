@@ -1,5 +1,5 @@
 export interface FetchContentDependency {
-  /** Dependency name as given to FetchContent_Declare (e.g., "googletest") */
+  /** Dependency name as given to FetchContent_Declare or FetchContent_Populate (e.g., "googletest") */
   name: string;
 
   /** Source type — determines which fields are populated */

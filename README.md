@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/cmake-depcheck)](https://www.npmjs.com/package/cmake-depcheck)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Scans CMake files for `FetchContent_Declare` calls, checks upstream repositories for newer versions, and reports what's out of date. Think `npm outdated`, but for CMake's FetchContent dependencies.
+Scans CMake files for `FetchContent_` dependencies, checks upstream repositories for newer versions, and reports what's out of date. Think `npm outdated`, but for CMake's FetchContent dependencies.
 
 ## Quick Start
 
@@ -202,6 +202,7 @@ cmake-depcheck scan --path . --json --fail-on-updates
 - **No cross-file include resolution in directory mode.** Directory scanning finds files by walking the filesystem, not by tracing `include()` calls. Use file mode for precise chain-following.
 - **Best-effort version comparison.** Semver tags (with or without `v` prefix) are compared accurately. Non-semver tags (e.g., `VER-2-14-0`) use prefix-based heuristics. SHA-pinned dependencies are reported as `pinned` but not checked for updates.
 - **URL dependency support is GitHub-only.** URL-based dependencies pointing to GitHub releases or archives are checked for updates using the same tag comparison as git deps. Non-GitHub URLs (e.g., custom mirrors, GitLab) are reported as `unsupported`.
+- **Only direct-form `FetchContent_Populate` is detected.** When `FetchContent_Populate` is called with source arguments (e.g., `GIT_REPOSITORY`, `URL`), it acts as a combined declaration+population and is treated as a dependency. Simple trigger calls like `FetchContent_Populate(depname)` are ignored — the dependency data lives in the corresponding `FetchContent_Declare`.
 
 ## Building from Source
 

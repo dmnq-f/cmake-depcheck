@@ -54,7 +54,7 @@ function parseDeclaration(
 
 export function parseCMakeContent(content: string, filePath: string): FetchContentDependency[] {
   const deps: FetchContentDependency[] = [];
-  const pattern = /fetchcontent_declare\s*\(/gi;
+  const pattern = /fetchcontent_(declare|populate)\s*\(/gi;
   let match: RegExpExecArray | null;
 
   while ((match = pattern.exec(content)) !== null) {
@@ -71,7 +71,13 @@ export function parseCMakeContent(content: string, filePath: string): FetchConte
     const endLine = lineNumberAt(content, closeParenIdx);
 
     const dep = parseDeclaration(tokens, filePath, startLine, endLine);
-    if (dep) deps.push(dep);
+    if (!dep) continue;
+
+    // Simple-form FetchContent_Populate(name) is just a trigger, not a declaration
+    const isPopulate = match[1].toLowerCase() === 'populate';
+    if (isPopulate && !dep.gitRepository && !dep.url) continue;
+
+    deps.push(dep);
   }
 
   return deps;
