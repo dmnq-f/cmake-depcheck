@@ -5,8 +5,40 @@ import { VERSION } from './index.js';
 import { parseCMakeContent } from './parser/index.js';
 import { scanDirectory, resolveChain, resolveDependencyVariables } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
+import { checkForUpdates } from './checker/index.js';
+import { UpdateCheckResult } from './checker/types.js';
 
-function printResults(deps: FetchContentDependency[], basePath: string, ignoredCount = 0): void {
+const STATUS_LABELS: Record<UpdateCheckResult['status'], string> = {
+  'up-to-date': 'up to date',
+  'update-available': 'update available',
+  'pinned': 'pinned',
+  'unpinned': 'unpinned',
+  'url-source': 'url source',
+  'check-failed': 'check failed',
+  'unresolved-variable': 'unresolved var',
+};
+
+function statusLabel(result: UpdateCheckResult): string {
+  if (result.status === 'update-available' && result.updateType) {
+    return `${result.updateType} update`;
+  }
+  return STATUS_LABELS[result.status];
+}
+
+function currentLabel(dep: FetchContentDependency, result?: UpdateCheckResult): string {
+  if (result) {
+    if (result.status === 'url-source') return '(url)';
+    if (result.status === 'unpinned') return '(none)';
+  }
+  return dep.sourceType === 'git' ? (dep.gitTag ?? '') : (dep.url ?? '');
+}
+
+function printResults(
+  deps: FetchContentDependency[],
+  basePath: string,
+  ignoredCount: number,
+  updateResults?: UpdateCheckResult[],
+): void {
   if (deps.length === 0) {
     console.log('No dependencies found.');
     return;
@@ -19,17 +51,73 @@ function printResults(deps: FetchContentDependency[], basePath: string, ignoredC
   }
   console.log(summary + ':\n');
 
-  const nameWidth = Math.max(...deps.map((d) => d.name.length));
-  const typeWidth = 3; // 'git' or 'url'
+  if (updateResults) {
+    const resultMap = new Map<FetchContentDependency, UpdateCheckResult>();
+    for (const r of updateResults) {
+      resultMap.set(r.dep, r);
+    }
 
-  for (const dep of deps) {
-    const version = dep.sourceType === 'git' ? (dep.gitTag ?? '') : (dep.url ?? '');
-    const relFile = path.relative(basePath, dep.location.file);
-    const location = `${relFile}:${dep.location.startLine}`;
+    // Build rows sorted by actionability: updates first, then up-to-date, then skipped
+    const STATUS_ORDER: Record<UpdateCheckResult['status'], number> = {
+      'update-available': 0,
+      'check-failed': 1,
+      'unresolved-variable': 2,
+      'up-to-date': 3,
+      pinned: 4,
+      unpinned: 5,
+      'url-source': 6,
+    };
+
+    const rows = deps
+      .map((dep) => {
+        const result = resultMap.get(dep)!;
+        const relFile = path.relative(basePath, dep.location.file);
+        return {
+          name: dep.name,
+          current: currentLabel(dep, result),
+          latest: result.latestVersion ?? '\u2014',
+          status: statusLabel(result),
+          location: `${relFile}:${dep.location.startLine}`,
+          sortKey: STATUS_ORDER[result.status],
+        };
+      })
+      .sort((a, b) => a.sortKey - b.sortKey);
+
+    const nameW = Math.max('Name'.length, ...rows.map((r) => r.name.length));
+    const currentW = Math.max('Current'.length, ...rows.map((r) => r.current.length));
+    const latestW = Math.max('Latest'.length, ...rows.map((r) => r.latest.length));
+    const statusW = Math.max('Status'.length, ...rows.map((r) => r.status.length));
 
     console.log(
-      `  ${dep.name.padEnd(nameWidth)}  ${dep.sourceType.padEnd(typeWidth)}  ${version.padEnd(50)}  ${location}`,
+      `  ${'Name'.padEnd(nameW)}  ${'Current'.padEnd(currentW)}  ${'Latest'.padEnd(latestW)}  ${'Status'.padEnd(statusW)}  Location`,
     );
+
+    for (const row of rows) {
+      console.log(
+        `  ${row.name.padEnd(nameW)}  ${row.current.padEnd(currentW)}  ${row.latest.padEnd(latestW)}  ${row.status.padEnd(statusW)}  ${row.location}`,
+      );
+    }
+
+    // Print errors to stderr
+    for (const result of updateResults) {
+      if (result.status === 'check-failed' && result.error) {
+        console.error(`Error checking ${result.dep.name}: ${result.error}`);
+      }
+    }
+  } else {
+    // Scan-only mode: original format
+    const nameWidth = Math.max(...deps.map((d) => d.name.length));
+    const typeWidth = 3;
+
+    for (const dep of deps) {
+      const version = dep.sourceType === 'git' ? (dep.gitTag ?? '') : (dep.url ?? '');
+      const relFile = path.relative(basePath, dep.location.file);
+      const location = `${relFile}:${dep.location.startLine}`;
+
+      console.log(
+        `  ${dep.name.padEnd(nameWidth)}  ${dep.sourceType.padEnd(typeWidth)}  ${version.padEnd(50)}  ${location}`,
+      );
+    }
   }
 }
 
@@ -52,44 +140,68 @@ export function createProgram(): Command {
       [],
     )
     .option('--ignore <name>', 'Exclude a dependency by name (repeatable)', collect, [])
-    .action((options: { path: string; exclude: string[]; ignore: string[] }) => {
-      const targetPath = path.resolve(options.path);
-      const stat = fs.statSync(targetPath);
-      const customExcludes = options.exclude.map((p) => new RegExp(p));
+    .option('--scan-only', 'List dependencies without checking for updates')
+    .action(
+      async (options: {
+        path: string;
+        exclude: string[];
+        ignore: string[];
+        scanOnly?: boolean;
+      }) => {
+        const targetPath = path.resolve(options.path);
+        const stat = fs.statSync(targetPath);
+        const customExcludes = options.exclude.map((p) => new RegExp(p));
 
-      let allDeps: FetchContentDependency[] = [];
-      let basePath: string;
+        let allDeps: FetchContentDependency[] = [];
+        let basePath: string;
 
-      if (stat.isDirectory()) {
-        basePath = targetPath;
-        const files = scanDirectory(targetPath, customExcludes);
-        for (const file of files) {
-          const content = fs.readFileSync(file, 'utf-8');
-          allDeps = allDeps.concat(parseCMakeContent(content, file));
+        if (stat.isDirectory()) {
+          basePath = targetPath;
+          const files = scanDirectory(targetPath, customExcludes);
+          for (const file of files) {
+            const content = fs.readFileSync(file, 'utf-8');
+            allDeps = allDeps.concat(parseCMakeContent(content, file));
+          }
+        } else {
+          basePath = path.dirname(targetPath);
+          const { files, warnings, vars } = resolveChain(targetPath);
+          for (const warning of warnings) {
+            console.error(warning);
+          }
+          for (const file of files) {
+            const content = fs.readFileSync(file, 'utf-8');
+            allDeps = allDeps.concat(parseCMakeContent(content, file));
+          }
+          resolveDependencyVariables(allDeps, vars);
         }
-      } else {
-        basePath = path.dirname(targetPath);
-        const { files, warnings, vars } = resolveChain(targetPath);
-        for (const warning of warnings) {
-          console.error(warning);
-        }
-        for (const file of files) {
-          const content = fs.readFileSync(file, 'utf-8');
-          allDeps = allDeps.concat(parseCMakeContent(content, file));
-        }
-        resolveDependencyVariables(allDeps, vars);
-      }
 
-      let ignoredCount = 0;
-      if (options.ignore.length > 0) {
-        const patterns = options.ignore.map((p) => new RegExp(`^${p}$`, 'i'));
-        const before = allDeps.length;
-        allDeps = allDeps.filter((d) => !patterns.some((p) => p.test(d.name)));
-        ignoredCount = before - allDeps.length;
-      }
+        let ignoredCount = 0;
+        if (options.ignore.length > 0) {
+          const patterns = options.ignore.map((p) => new RegExp(`^${p}$`, 'i'));
+          const before = allDeps.length;
+          allDeps = allDeps.filter((d) => !patterns.some((p) => p.test(d.name)));
+          ignoredCount = before - allDeps.length;
+        }
 
-      printResults(allDeps, basePath, ignoredCount);
-    });
+        if (options.scanOnly) {
+          printResults(allDeps, basePath, ignoredCount);
+        } else {
+          const onProgress = process.stderr.isTTY
+            ? (completed: number, total: number) => {
+                process.stderr.write(`Checking for updates... (${completed}/${total})\r`);
+              }
+            : undefined;
+
+          const results = await checkForUpdates(allDeps, onProgress);
+
+          if (process.stderr.isTTY) {
+            process.stderr.write('\r' + ' '.repeat(40) + '\r');
+          }
+
+          printResults(allDeps, basePath, ignoredCount, results);
+        }
+      },
+    );
 
   return program;
 }

@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-Scans CMake files for `FetchContent_Declare` calls and reports which dependencies are declared, where, and at what version. Think `npm outdated`, but for CMake's FetchContent dependencies.
+Scans CMake files for `FetchContent_Declare` calls, checks upstream repositories for newer versions, and reports what's out of date. Think `npm outdated`, but for CMake's FetchContent dependencies.
 
 ## Quick Start
 
@@ -13,15 +13,16 @@ npx cmake-depcheck scan --path ./CMakeLists.txt
 ```
 
 ```
-Found 4 dependencies in 3 files:
+Found 4 dependencies in 3 file(s):
 
-  googletest  git  v1.17.0                                     CMakeLists.txt:7
-  fmt         git  12.1.0                                      cmake/deps.cmake:2
-  spdlog      git  v1.17.0                                     libs/logging/CMakeLists.txt:4
-  json        url  https://github.com/.../json.tar.xz          CMakeLists.txt:19
+  Name        Current  Latest   Status        Location
+  googletest  v1.17.0  v1.17.0  up to date    CMakeLists.txt:7
+  fmt         10.2.1   12.1.0   major update  cmake/deps.cmake:2
+  spdlog      v1.13.0  v1.17.0  minor update  libs/logging/CMakeLists.txt:4
+  json        (url)    —        url source    CMakeLists.txt:19
 ```
 
-This follows the chain of `include()` and `add_subdirectory()` calls from your entry file, giving you the exact set of FetchContent dependencies your build actually uses.
+This follows the chain of `include()` and `add_subdirectory()` calls from your entry file, checks each git-based dependency for newer tags, and reports the result.
 
 ## Installation
 
@@ -72,6 +73,14 @@ Exclusion patterns are regular expressions matched against directory names.
 
 Directory mode is useful for a quick overview or when your project structure doesn't follow standard `add_subdirectory()` patterns.
 
+### Scan only (no update check)
+
+By default, the scan command checks upstream repositories for newer versions. Use `--scan-only` to skip network calls and just list what's declared:
+
+```bash
+cmake-depcheck scan --path ./CMakeLists.txt --scan-only
+```
+
 ### Ignoring dependencies
 
 Use `--ignore` to exclude specific dependencies from the output by name (repeatable, case-insensitive). Names are matched exactly by default; use regex syntax for patterns:
@@ -87,7 +96,7 @@ Ignored dependencies are still parsed but omitted from the results. The summary 
 - **Limited variable expansion.** When scanning from a specific file (chain mode), cmake-depcheck tracks `set()` calls and resolves `${VAR}` references in both file paths and dependency declarations. This covers common patterns like `set(GTEST_VERSION "v1.14.0")` followed by `GIT_TAG ${GTEST_VERSION}`. However, `CACHE` variables, `PARENT_SCOPE`, environment variables, and values computed via `string()`, `list()`, or `math()` are not resolved. In directory scan mode, no variable resolution is performed.
 - **No conditional evaluation.** Declarations inside `if()` blocks are always included regardless of the condition.
 - **No cross-file include resolution in directory mode.** Directory scanning finds files by walking the filesystem, not by tracing `include()` calls. Use file mode for precise chain-following.
-- **No version checking yet.** The tool currently reports what's declared but doesn't check upstream for newer versions. This is planned.
+- **Best-effort version comparison.** Semver tags (with or without `v` prefix) are compared accurately. Non-semver tags (e.g., `VER-2-14-0`) use prefix-based heuristics. SHA-pinned and URL-based dependencies are reported but not checked.
 
 ## Building from Source
 
