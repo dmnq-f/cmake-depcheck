@@ -218,7 +218,7 @@ describe('action', () => {
       );
     });
 
-    it('emits notice for pinned, unpinned, unsupported', async () => {
+    it('does not annotate pinned, unpinned, unsupported (covered by summary table)', async () => {
       const deps = ['pinned', 'unpinned', 'unsupported'] as const;
       const results: UpdateCheckResult[] = deps.map((status) => ({
         dep: makeDep({ name: `${status}-lib` }),
@@ -227,19 +227,8 @@ describe('action', () => {
       mockScan.mockResolvedValue(makeResult(results));
       await runAction();
 
-      expect(mockNotice).toHaveBeenCalledTimes(3);
-      expect(mockNotice).toHaveBeenCalledWith(
-        'pinned-lib: pinned',
-        expect.objectContaining({ file: 'CMakeLists.txt' }),
-      );
-      expect(mockNotice).toHaveBeenCalledWith(
-        'unpinned-lib: unpinned',
-        expect.objectContaining({ file: 'CMakeLists.txt' }),
-      );
-      expect(mockNotice).toHaveBeenCalledWith(
-        'unsupported-lib: unsupported',
-        expect.objectContaining({ file: 'CMakeLists.txt' }),
-      );
+      expect(mockWarning).not.toHaveBeenCalled();
+      expect(mockNotice).not.toHaveBeenCalled();
     });
 
     it('does not annotate up-to-date deps', async () => {

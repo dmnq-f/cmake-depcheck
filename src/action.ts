@@ -57,7 +57,6 @@ function annotate(result: UpdateCheckResult): void {
     case 'pinned':
     case 'unpinned':
     case 'unsupported':
-      core.notice(`${dep.name}: ${statusLabel(result.status)}`, { file, startLine });
       break;
   }
 }
