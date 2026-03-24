@@ -41,6 +41,26 @@ jobs:
       pull-requests: write
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           config-file: .github/release-please-config.json
           manifest-file: .github/.release-please-manifest.json
+          # Workaround: draft releases use lazy tag creation, so
+          # release-please can't find the tag on the release commit push
+          # and creates a bogus PR. Skip PR creation on release commits
+          # since there are no unreleased changes to propose.
+          # See https://github.com/googleapis/release-please-action/issues/962
+          skip-github-pull-request: ${{ startsWith(github.event.head_commit.message, 'chore(main)') }}
+
+      # Workaround: create the git tag for draft releases so future
+      # release-please runs can find it and anchor versions correctly.
+      # Remove both workarounds once force-tag-creation lands in a
+      # released action version (googleapis/release-please#2627).
+      - name: Tag draft release
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api repos/${{ github.repository }}/git/refs \
+            -f ref="refs/tags/v${{ steps.release.outputs.major }}.${{ steps.release.outputs.minor }}.${{ steps.release.outputs.patch }}" \
+            -f sha="${{ github.sha }}"
