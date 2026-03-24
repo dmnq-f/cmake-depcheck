@@ -54,8 +54,7 @@ describe('checkForUpdates', () => {
     const results = await checkForUpdates([makeDep({ gitTag: 'v1.0.0' })]);
 
     expect(results[0].status).toBe('update-available');
-    expect(results[0].intermediateTags).toBeDefined();
-    expect(results[0].intermediateTags).toContain('v2.0.0');
+    expect(results[0].intermediateTags).toEqual(['v2.0.0', 'v1.1.0']);
   });
 
   it('reports up-to-date when current is latest', async () => {
@@ -242,6 +241,14 @@ describe('checkForUpdates', () => {
       expect(results[0].resolvedVersion).toBe('v1.2.3');
       // No HEAD validation for archive patterns
       expect(mockedVerifyUrlExists).not.toHaveBeenCalled();
+    });
+
+    it('includes intermediateTags on update-available URL deps', async () => {
+      mockedFetchRemoteTags.mockResolvedValue(['v1.2.3', 'v1.2.5', 'v1.3.0']);
+      const dep = makeUrlDep('https://github.com/owner/repo/archive/v1.2.3.tar.gz');
+      const results = await checkForUpdates([dep]);
+      expect(results[0].intermediateTags).toBeDefined();
+      expect(results[0].intermediateTags).toContain('v1.3.0');
     });
 
     it('releases-download pattern: update-available with valid HEAD', async () => {
