@@ -127,4 +127,146 @@ describe('scan()', () => {
       expect(progressCalls[0][0]).toBe(1);
     });
   });
+
+  describe('update-type filtering', () => {
+    it('filters update-available results by type', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep, i): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: `v${i + 2}.0.0`,
+            updateType: i === 0 ? 'major' : 'minor',
+          }),
+        );
+      });
+
+      const result = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        updateTypes: new Set(['minor']),
+      });
+      expect(result.updateResults).toHaveLength(1);
+      expect(result.updateResults![0].updateType).toBe('minor');
+    });
+
+    it('tracks filteredCount correctly', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep, i): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: `v${i + 2}.0.0`,
+            updateType: i === 0 ? 'major' : 'patch',
+          }),
+        );
+      });
+
+      const result = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        updateTypes: new Set(['patch']),
+      });
+      expect(result.filteredCount).toBe(1);
+    });
+
+    it('keeps non-update-available results unfiltered', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return [
+          { dep: deps[0], status: 'up-to-date' } as UpdateCheckResult,
+          {
+            dep: deps[1],
+            status: 'update-available',
+            latestVersion: 'v2.0.0',
+            updateType: 'major',
+          } as UpdateCheckResult,
+        ];
+      });
+
+      const result = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        updateTypes: new Set(['minor']),
+      });
+      // up-to-date is kept, major update-available is filtered
+      expect(result.updateResults).toHaveLength(1);
+      expect(result.updateResults![0].status).toBe('up-to-date');
+      expect(result.filteredCount).toBe(1);
+    });
+
+    it('handles unknown type (undefined updateType)', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: 'v2.0.0',
+            updateType: undefined,
+          }),
+        );
+      });
+
+      // unknown included
+      const result1 = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        updateTypes: new Set(['unknown']),
+      });
+      expect(result1.updateResults).toHaveLength(2);
+      expect(result1.filteredCount).toBe(0);
+
+      // unknown not included
+      const result2 = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        updateTypes: new Set(['major']),
+      });
+      expect(result2.updateResults).toHaveLength(0);
+      expect(result2.filteredCount).toBe(2);
+    });
+
+    it('returns filteredCount 0 when updateTypes is undefined', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: 'v2.0.0',
+            updateType: 'major',
+          }),
+        );
+      });
+
+      const result = await scan({ path: path.join(FIXTURES, 'basic-git') });
+      expect(result.filteredCount).toBe(0);
+      expect(result.updateResults).toHaveLength(2);
+    });
+
+    it('keeps deps array in sync with updateResults', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep, i): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: `v${i + 2}.0.0`,
+            updateType: i === 0 ? 'major' : 'minor',
+          }),
+        );
+      });
+
+      const result = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        updateTypes: new Set(['minor']),
+      });
+      expect(result.deps).toHaveLength(1);
+      expect(result.updateResults).toHaveLength(1);
+      expect(result.updateResults![0].dep).toBe(result.deps[0]);
+    });
+
+    it('is a no-op when combined with scanOnly', async () => {
+      const result = await scan({
+        path: path.join(FIXTURES, 'basic-git'),
+        updateTypes: new Set(['minor']),
+        scanOnly: true,
+      });
+      expect(result.filteredCount).toBe(0);
+      expect(result.updateResults).toBeUndefined();
+      expect(result.deps).toHaveLength(2);
+    });
+  });
 });

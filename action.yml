@@ -23,6 +23,10 @@ inputs:
     description: 'Dependency names to exclude from results, one per line'
     required: false
     default: ''
+  update-types:
+    description: 'Only include these update types in results and PRs (comma-separated: major, minor, patch, unknown). If unset, all types are included.'
+    required: false
+    default: ''
   fail-on-updates:
     description: 'Fail the workflow if any dependency has an available update'
     required: false

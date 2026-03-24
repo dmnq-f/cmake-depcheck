@@ -3,6 +3,7 @@ import * as core from '@actions/core';
 import { fileURLToPath } from 'node:url';
 import { scan } from './scan.js';
 import { UpdateCheckResult } from './checker/types.js';
+import { parseUpdateTypes } from './update-types.js';
 import { createPullRequests, type PrResult } from './pr/index.js';
 
 function parseMultiLineInput(raw: string): string[] {
@@ -68,12 +69,15 @@ export async function run(): Promise<void> {
   const failOnUpdates = core.getInput('fail-on-updates') === 'true';
   const exclude = parseMultiLineInput(core.getInput('exclude'));
   const ignore = parseMultiLineInput(core.getInput('ignore'));
+  const updateTypesRaw = core.getInput('update-types');
+  const updateTypes = updateTypesRaw ? parseUpdateTypes(updateTypesRaw) : undefined;
 
   const result = await scan({
     path: inputPath,
     scanOnly,
     excludePatterns: exclude.length > 0 ? exclude.map((p) => new RegExp(p)) : undefined,
     ignoreNames: ignore.length > 0 ? ignore : undefined,
+    updateTypes,
   });
 
   // Annotations
@@ -116,19 +120,22 @@ export async function run(): Promise<void> {
   }
 
   if (rows.length > 0) {
-    await core.summary
-      .addHeading('CMake Dependency Check', 3)
-      .addTable([
-        [
-          { data: 'Name', header: true },
-          { data: 'Current', header: true },
-          { data: 'Latest', header: true },
-          { data: 'Status', header: true },
-          { data: 'Location', header: true },
-        ],
-        ...rows.map((r) => [r.name, r.current, r.latest, r.status, r.location]),
-      ])
-      .write();
+    const summaryBuilder = core.summary.addHeading('CMake Dependency Check', 3).addTable([
+      [
+        { data: 'Name', header: true },
+        { data: 'Current', header: true },
+        { data: 'Latest', header: true },
+        { data: 'Status', header: true },
+        { data: 'Location', header: true },
+      ],
+      ...rows.map((r) => [r.name, r.current, r.latest, r.status, r.location]),
+    ]);
+
+    if (result.filteredCount > 0) {
+      summaryBuilder.addRaw(`<p>${result.filteredCount} update(s) filtered by update type.</p>`);
+    }
+
+    await summaryBuilder.write();
   }
 
   // Outputs

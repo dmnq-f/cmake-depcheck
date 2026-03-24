@@ -11,6 +11,7 @@ const mockSetFailed = vi.fn();
 const mockGetInput = vi.fn();
 const mockSummaryAddHeading = vi.fn();
 const mockSummaryAddTable = vi.fn();
+const mockSummaryAddRaw = vi.fn();
 const mockSummaryWrite = vi.fn();
 
 function makeSummaryChain() {
@@ -21,6 +22,10 @@ function makeSummaryChain() {
     },
     addTable(...args: unknown[]) {
       mockSummaryAddTable(...args);
+      return chain;
+    },
+    addRaw(...args: unknown[]) {
+      mockSummaryAddRaw(...args);
       return chain;
     },
     write() {
@@ -70,6 +75,7 @@ function makeDep(overrides: Partial<FetchContentDependency> = {}): FetchContentD
 function makeResult(
   updateResults?: UpdateCheckResult[],
   deps?: FetchContentDependency[],
+  overrides?: Partial<ScanResult>,
 ): ScanResult {
   return {
     deps: deps ?? updateResults?.map((r) => r.dep) ?? [],
@@ -78,7 +84,9 @@ function makeResult(
     filesScanned: [`${process.cwd()}/CMakeLists.txt`],
     warnings: [],
     ignoredCount: 0,
+    filteredCount: 0,
     updateResults,
+    ...overrides,
   };
 }
 
@@ -468,12 +476,107 @@ describe('action', () => {
     });
   });
 
+  describe('update-types filtering', () => {
+    it('passes updateTypes to scan()', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        switch (name) {
+          case 'update-types':
+            return 'minor,patch';
+          default:
+            return '';
+        }
+      });
+      mockScan.mockResolvedValue(makeResult([]));
+      await runAction();
+
+      const call = mockScan.mock.calls[0][0] as ScanOptions;
+      expect(call.updateTypes).toEqual(new Set(['minor', 'patch']));
+    });
+
+    it('does not pass updateTypes when input is empty', async () => {
+      mockScan.mockResolvedValue(makeResult([]));
+      await runAction();
+
+      const call = mockScan.mock.calls[0][0] as ScanOptions;
+      expect(call.updateTypes).toBeUndefined();
+    });
+
+    it('filtered results affect updates-available and has-updates outputs', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        switch (name) {
+          case 'update-types':
+            return 'minor';
+          default:
+            return '';
+        }
+      });
+      // Simulate scan() already having filtered: only minor update remains
+      const dep = makeDep({ name: 'fmt' });
+      const results: UpdateCheckResult[] = [
+        { dep, status: 'update-available', latestVersion: '1.1.0', updateType: 'minor' },
+      ];
+      mockScan.mockResolvedValue(makeResult(results, undefined, { filteredCount: 1 }));
+      await runAction();
+
+      expect(mockSetOutput).toHaveBeenCalledWith('has-updates', 'true');
+      expect(mockSetOutput).toHaveBeenCalledWith('updates-available', '1');
+    });
+
+    it('fail-on-updates only triggers for non-filtered updates', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        switch (name) {
+          case 'fail-on-updates':
+            return 'true';
+          case 'update-types':
+            return 'minor';
+          default:
+            return '';
+        }
+      });
+      // All major updates were filtered, none remain
+      mockScan.mockResolvedValue(
+        makeResult([{ dep: makeDep(), status: 'up-to-date' }], undefined, { filteredCount: 2 }),
+      );
+      await runAction();
+
+      expect(mockSetFailed).not.toHaveBeenCalled();
+    });
+
+    it('shows filteredCount in action summary when non-zero', async () => {
+      const dep = makeDep({ name: 'fmt' });
+      const results: UpdateCheckResult[] = [{ dep, status: 'up-to-date' }];
+      mockScan.mockResolvedValue(makeResult(results, undefined, { filteredCount: 3 }));
+      await runAction();
+
+      expect(mockSummaryAddRaw).toHaveBeenCalledWith(
+        expect.stringContaining('3 update(s) filtered by update type'),
+      );
+    });
+  });
+
   describe('error handling', () => {
     it('calls setFailed on scan error', async () => {
       mockScan.mockRejectedValue(new Error('File not found: CMakeLists.txt'));
       await runAction();
 
       expect(mockSetFailed).toHaveBeenCalledWith('File not found: CMakeLists.txt');
+    });
+
+    it('calls setFailed on invalid update-types input', async () => {
+      mockGetInput.mockImplementation((name: string) => {
+        switch (name) {
+          case 'update-types':
+            return 'bogus';
+          default:
+            return '';
+        }
+      });
+      mockScan.mockResolvedValue(makeResult([]));
+      await runAction();
+
+      expect(mockSetFailed).toHaveBeenCalledWith(
+        expect.stringContaining('Invalid update type "bogus"'),
+      );
     });
   });
 });

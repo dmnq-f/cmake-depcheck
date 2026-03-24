@@ -6,6 +6,7 @@ import type { VariableInfo } from './scanner/index.js';
 import { FetchContentDependency } from './parser/types.js';
 import { checkForUpdates } from './checker/index.js';
 import { UpdateCheckResult } from './checker/types.js';
+import { isAllowedUpdateType } from './update-types.js';
 
 export interface ScanOptions {
   /** Path to CMakeLists.txt or project root directory */
@@ -16,6 +17,8 @@ export interface ScanOptions {
   ignoreNames?: string[];
   /** If true, skip update checking */
   scanOnly?: boolean;
+  /** Update types to include in results. If set, update-available results with non-matching updateType are filtered out. */
+  updateTypes?: Set<string>;
   /** Progress callback for update checking — caller decides if/how to show progress */
   onProgress?: (completed: number, total: number) => void;
 }
@@ -33,6 +36,8 @@ export interface ScanResult {
   warnings: string[];
   /** Number of dependencies excluded by ignore config */
   ignoredCount: number;
+  /** Number of update-available results excluded by update-type filter */
+  filteredCount: number;
   /** Update check results, absent when scanOnly is true */
   updateResults?: UpdateCheckResult[];
   /** Variable table from chain resolution (absent in directory scan mode) */
@@ -91,6 +96,21 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     updateResults = await checkForUpdates(deps, options.onProgress);
   }
 
+  let filteredCount = 0;
+  if (options.updateTypes && updateResults) {
+    const allowed = options.updateTypes;
+    const before = updateResults.length;
+    updateResults = updateResults.filter((r) => {
+      if (r.status !== 'update-available') return true;
+      return isAllowedUpdateType(r.updateType, allowed);
+    });
+    filteredCount = before - updateResults.length;
+
+    // Remove filtered deps from the deps array to keep them in sync
+    const keptDeps = new Set(updateResults.map((r) => r.dep));
+    deps = deps.filter((d) => keptDeps.has(d));
+  }
+
   return {
     deps,
     basePath,
@@ -98,6 +118,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     filesScanned,
     warnings,
     ignoredCount,
+    filteredCount,
     updateResults,
     vars,
   };

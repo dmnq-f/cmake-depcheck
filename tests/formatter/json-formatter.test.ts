@@ -29,6 +29,7 @@ function baseOptions(overrides: Partial<JsonOutputOptions> = {}): JsonOutputOpti
     deps: [makeDep()],
     basePath: '/project',
     ignoredCount: 0,
+    filteredCount: 0,
     scanMode: 'directory',
     entryPath: './project',
     filesScanned: ['/project/CMakeLists.txt'],
@@ -228,6 +229,16 @@ describe('formatJsonOutput', () => {
   it('ignoredCount reflects filtered deps', () => {
     const output = formatJsonOutput(baseOptions({ ignoredCount: 3 })) as Record<string, unknown>;
     expect(output.ignoredCount).toBe(3);
+  });
+
+  it('filteredCount appears in output', () => {
+    const output = formatJsonOutput(baseOptions({ filteredCount: 5 })) as Record<string, unknown>;
+    expect(output.filteredCount).toBe(5);
+  });
+
+  it('filteredCount defaults to 0', () => {
+    const output = formatJsonOutput(baseOptions()) as Record<string, unknown>;
+    expect(output.filteredCount).toBe(0);
   });
 
   it('warnings array is populated', () => {

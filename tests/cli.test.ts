@@ -364,4 +364,135 @@ describe('cli', () => {
       expect(errorLines.some((l) => l.includes('--fail-on-updates has no effect'))).toBe(true);
     });
   });
+
+  describe('--update-types', () => {
+    it('filters results by update type in human-readable output', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep, i): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: `v${i + 2}.0.0`,
+            updateType: i === 0 ? 'major' : 'minor',
+          }),
+        );
+      });
+
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--update-types', 'minor');
+      const output = logLines.join('\n');
+      expect(output).toMatch(/minor update/);
+      expect(output).not.toMatch(/major update/);
+    });
+
+    it('shows filteredCount in summary line when non-zero', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep, i): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: `v${i + 2}.0.0`,
+            updateType: i === 0 ? 'major' : 'minor',
+          }),
+        );
+      });
+
+      await runScan('--path', path.join(FIXTURES, 'basic-git'), '--update-types', 'minor');
+      expect(logLines[0]).toMatch(/filtered by update type/);
+    });
+
+    it('shows both ignoredCount and filteredCount in summary line', async () => {
+      // chain-basic has 3 deps: ignore 1, filter 1 major, keep 1 minor
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep, i): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: `v${i + 2}.0.0`,
+            updateType: i === 0 ? 'major' : 'minor',
+          }),
+        );
+      });
+
+      await runScan(
+        '--path',
+        path.join(FIXTURES, 'chain-basic', 'CMakeLists.txt'),
+        '--ignore',
+        'googletest',
+        '--update-types',
+        'minor',
+      );
+      expect(logLines[0]).toMatch(/omitted due to ignore configuration/);
+      expect(logLines[0]).toMatch(/filtered by update type/);
+      expect(logLines[0]).toMatch(/\(.*,.*\)/);
+    });
+
+    it('emits warning with --scan-only', async () => {
+      await runScan(
+        '--path',
+        path.join(FIXTURES, 'basic-git'),
+        '--scan-only',
+        '--update-types',
+        'minor',
+      );
+      expect(errorLines.some((l) => l.includes('--update-types has no effect'))).toBe(true);
+    });
+
+    it('exits with error on invalid update type', async () => {
+      const err = await runScan(
+        '--path',
+        path.join(FIXTURES, 'basic-git'),
+        '--update-types',
+        'bogus',
+      ).catch((e) => e);
+      expect(err).toBeInstanceOf(CommanderError);
+      expect((err as CommanderError).exitCode).toBe(1);
+    });
+
+    it('includes filteredCount in JSON output', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: 'v2.0.0',
+            updateType: 'major',
+          }),
+        );
+      });
+
+      await runScan(
+        '--path',
+        path.join(FIXTURES, 'basic-git'),
+        '--json',
+        '--update-types',
+        'minor',
+      );
+      const output = parseJsonOutput();
+      expect(output.filteredCount).toBe(2);
+    });
+
+    it('--fail-on-updates only triggers for non-filtered updates', async () => {
+      mockedCheckForUpdates.mockImplementation(async (deps) => {
+        return deps.map(
+          (dep): UpdateCheckResult => ({
+            dep,
+            status: 'update-available',
+            latestVersion: 'v2.0.0',
+            updateType: 'major',
+          }),
+        );
+      });
+
+      // All updates are major, but we only allow minor — so no updates remain, no failure
+      await expect(
+        runScan(
+          '--path',
+          path.join(FIXTURES, 'basic-git'),
+          '--fail-on-updates',
+          '--update-types',
+          'minor',
+        ),
+      ).resolves.toBeUndefined();
+    });
+  });
 });

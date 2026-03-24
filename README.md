@@ -78,6 +78,20 @@ steps:
       token: ${{ secrets.PAT }}
 ```
 
+### Filtering by update type
+
+Use `update-types` to limit which update types appear in results, trigger `fail-on-updates`, or get PRs. This is a scan-level filter — non-matching `update-available` results are excluded from all outputs.
+
+```yaml
+- uses: dmnq-f/cmake-depcheck@v1
+  with:
+    path: CMakeLists.txt
+    update-types: minor,patch
+    fail-on-updates: true
+```
+
+Valid values: `major`, `minor`, `patch`, `unknown`. The job summary notes how many updates were filtered.
+
 ### Inputs
 
 | Input | Description | Default |
@@ -86,6 +100,7 @@ steps:
 | `scan-only` | List dependencies without checking for updates | `false` |
 | `exclude` | Directory exclusion patterns, one per line | |
 | `ignore` | Dependency names to exclude from results, one per line | |
+| `update-types` | Only include these update types in results and PRs (comma-separated: `major`, `minor`, `patch`, `unknown`) | |
 | `fail-on-updates` | Fail the workflow if any dependency has an available update | `false` |
 | `create-prs` | Create pull requests for available updates | `false` |
 | `dry-run` | Log what PRs would be created without actually creating them (requires `create-prs: true`) | `false` |
@@ -183,6 +198,16 @@ Combine with `--scan-only` to get a machine-readable inventory without hitting t
 ```bash
 cmake-depcheck scan --path . --scan-only --json
 ```
+
+### Filtering by update type
+
+Use `--update-types` to limit results to specific update types. This filters `update-available` results before they appear in output, trigger `--fail-on-updates`, or generate PRs:
+
+```bash
+cmake-depcheck scan --path . --fail-on-updates --update-types minor,patch
+```
+
+Exits with code 1 only if minor or patch updates are available. Major updates are silently filtered. Valid values: `major`, `minor`, `patch`, `unknown`.
 
 ### Failing on updates
 

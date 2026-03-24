@@ -8,6 +8,7 @@ import { FetchContentDependency } from './parser/types.js';
 import { UpdateCheckResult } from './checker/types.js';
 import { formatJsonOutput } from './formatter/index.js';
 import { scan } from './scan.js';
+import { parseUpdateTypes } from './update-types.js';
 import { SHA_PATTERN } from './constants.js';
 
 const STATUS_LABELS: Record<UpdateCheckResult['status'], string> = {
@@ -44,6 +45,7 @@ function printResults(
   deps: FetchContentDependency[],
   basePath: string,
   ignoredCount: number,
+  filteredCount: number,
   updateResults?: UpdateCheckResult[],
 ): void {
   if (deps.length === 0) {
@@ -52,10 +54,11 @@ function printResults(
   }
 
   const fileSet = new Set(deps.map((d) => d.location.file));
+  const suffixes: string[] = [];
+  if (ignoredCount > 0) suffixes.push(`${ignoredCount} omitted due to ignore configuration`);
+  if (filteredCount > 0) suffixes.push(`${filteredCount} filtered by update type`);
   let summary = `Found ${deps.length} dependencies in ${fileSet.size} file(s)`;
-  if (ignoredCount > 0) {
-    summary += ` (${ignoredCount} omitted due to ignore configuration)`;
-  }
+  if (suffixes.length > 0) summary += ` (${suffixes.join(', ')})`;
   console.log(summary + ':\n');
 
   if (updateResults) {
@@ -147,6 +150,10 @@ export function createProgram(): Command {
       [],
     )
     .option('--ignore <name>', 'Exclude a dependency by name (repeatable)', collect, [])
+    .option(
+      '--update-types <types>',
+      'Only include these update types (comma-separated: major, minor, patch, unknown)',
+    )
     .option('--scan-only', 'List dependencies without checking for updates')
     .option('--json', 'Emit JSON to stdout (suppresses standard CLI output)')
     .option('--fail-on-updates', 'Exit with code 1 if any updates are available')
@@ -155,6 +162,7 @@ export function createProgram(): Command {
         path: string;
         exclude: string[];
         ignore: string[];
+        updateTypes?: string;
         scanOnly?: boolean;
         json?: boolean;
         failOnUpdates?: boolean;
@@ -163,6 +171,25 @@ export function createProgram(): Command {
           console.error(
             'Warning: --fail-on-updates has no effect with --scan-only (no update checks performed)',
           );
+        }
+
+        if (options.updateTypes && options.scanOnly) {
+          console.error(
+            'Warning: --update-types has no effect with --scan-only (no update checks performed)',
+          );
+        }
+
+        let updateTypes: Set<string> | undefined;
+        if (options.updateTypes) {
+          try {
+            updateTypes = parseUpdateTypes(options.updateTypes);
+          } catch (err) {
+            throw new CommanderError(
+              1,
+              'cmake-depcheck.invalid_update_type',
+              err instanceof Error ? err.message : String(err),
+            );
+          }
         }
 
         const onProgress =
@@ -176,6 +203,7 @@ export function createProgram(): Command {
           path: options.path,
           excludePatterns: options.exclude.map((p) => new RegExp(p)),
           ignoreNames: options.ignore,
+          updateTypes,
           scanOnly: options.scanOnly,
           onProgress,
         });
@@ -194,7 +222,13 @@ export function createProgram(): Command {
           for (const warning of result.warnings) {
             console.error(warning);
           }
-          printResults(result.deps, result.basePath, result.ignoredCount, result.updateResults);
+          printResults(
+            result.deps,
+            result.basePath,
+            result.ignoredCount,
+            result.filteredCount,
+            result.updateResults,
+          );
         }
 
         if (

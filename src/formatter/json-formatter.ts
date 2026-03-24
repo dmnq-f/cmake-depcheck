@@ -131,6 +131,7 @@ export function formatJsonOutput(options: JsonOutputOptions): object {
     deps,
     basePath,
     ignoredCount,
+    filteredCount,
     scanMode,
     entryPath,
     filesScanned,
@@ -154,6 +155,7 @@ export function formatJsonOutput(options: JsonOutputOptions): object {
     },
     dependencies: deps.map((dep) => buildDependency(dep, basePath, resultMap)),
     ignoredCount,
+    filteredCount,
     warnings,
   };
 
