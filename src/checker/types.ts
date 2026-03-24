@@ -17,4 +17,6 @@ export interface UpdateCheckResult {
   updatedUrl?: string;
   /** Version/tag resolved from the dep's URL (GitHub URL deps only) */
   resolvedVersion?: string;
+  /** Remote tags between current and latest (exclusive of current, inclusive of latest), newest first. */
+  intermediateTags?: string[];
 }

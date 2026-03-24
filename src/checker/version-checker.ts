@@ -1,7 +1,7 @@
 import { FetchContentDependency } from '../parser/types.js';
 import { UpdateCheckResult } from './types.js';
 import { fetchRemoteTags } from './git-tags.js';
-import { findLatestVersion } from './version-compare.js';
+import { findLatestVersion, findIntermediateTags } from './version-compare.js';
 import {
   extractGitHubUrlInfo,
   buildUpdatedUrl,
@@ -169,6 +169,7 @@ export async function checkForUpdates(
         updateType: versionResult.updateType,
         updatedUrl: candidateUrl,
         resolvedVersion: ghInfo.tag,
+        intermediateTags: findIntermediateTags(currentTag, versionResult.latest, tags),
       });
     } else {
       results.set(dep, {
@@ -176,6 +177,7 @@ export async function checkForUpdates(
         status: 'update-available',
         latestVersion: versionResult.latest,
         updateType: versionResult.updateType,
+        intermediateTags: findIntermediateTags(currentTag, versionResult.latest, tags),
       });
     }
   }

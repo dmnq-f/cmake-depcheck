@@ -48,6 +48,16 @@ describe('checkForUpdates', () => {
     expect(results[0].updateType).toBe('major');
   });
 
+  it('includes intermediateTags on update-available results', async () => {
+    mockedFetchRemoteTags.mockResolvedValue(['v1.0.0', 'v1.1.0', 'v2.0.0']);
+
+    const results = await checkForUpdates([makeDep({ gitTag: 'v1.0.0' })]);
+
+    expect(results[0].status).toBe('update-available');
+    expect(results[0].intermediateTags).toBeDefined();
+    expect(results[0].intermediateTags).toContain('v2.0.0');
+  });
+
   it('reports up-to-date when current is latest', async () => {
     mockedFetchRemoteTags.mockResolvedValue(['v1.0.0', 'v1.1.0']);
 
@@ -55,6 +65,7 @@ describe('checkForUpdates', () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].status).toBe('up-to-date');
+    expect(results[0].intermediateTags).toBeUndefined();
   });
 
   it('skips URL-source deps without network call', async () => {

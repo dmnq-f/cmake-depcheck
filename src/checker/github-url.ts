@@ -93,6 +93,36 @@ export function extractGitHubUrlInfo(url: string): GitHubUrlInfo | null {
 }
 
 /**
+ * Extract GitHub owner and repo from any GitHub URL.
+ * Handles:
+ * - Repository URLs: https://github.com/owner/repo.git, https://github.com/owner/repo
+ * - Download URLs: https://github.com/owner/repo/releases/download/..., https://github.com/owner/repo/archive/...
+ * - Any other github.com URL with at least owner/repo in the path.
+ *
+ * Returns null for non-GitHub URLs or URLs without enough path segments.
+ */
+export function extractGitHubOwnerRepo(url: string): { owner: string; repo: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+
+  if (parsed.hostname !== 'github.com' && parsed.hostname !== 'www.github.com') {
+    return null;
+  }
+
+  const segments = parsed.pathname.split('/').filter(Boolean);
+  if (segments.length < 2) return null;
+
+  const owner = segments[0];
+  const repo = segments[1].replace(/\.git$/, '');
+
+  return { owner, repo };
+}
+
+/**
  * Construct the download URL for a different tag.
  * For releases-download, replaces occurrences of the old tag in the filename.
  */

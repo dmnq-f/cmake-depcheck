@@ -58,7 +58,7 @@ jobs:
 
 ### Auto-update PRs
 
-Set `create-prs: true` to open one pull request per outdated dependency. Each PR updates the version pin in the CMake source file — either the `GIT_TAG` value directly or the originating `set()` variable.
+Set `create-prs: true` to open one pull request per outdated dependency. Each PR updates the version pin in the CMake source file — either the `GIT_TAG` value directly or the originating `set()` variable. PRs include upstream release notes (from GitHub Releases) for all versions between your current pin and the latest, capped at the 5 most recent versions, with a link to the full changelog.
 
 **Token and repository settings:**
 * Ensure your repository settings allow for automatic PR creation, see the corresponding [Managing GitHub Actions settings for a repository](https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/enabling-features-for-your-repository/managing-github-actions-settings-for-a-repository#preventing-github-actions-from-creating-or-approving-pull-requests) section.

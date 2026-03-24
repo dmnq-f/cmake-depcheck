@@ -1,6 +1,7 @@
 import type { getOctokit } from '@actions/github';
 import type { UpdateCheckResult } from '../checker/types.js';
 import type { FileEdit } from './edit-compute.js';
+import { fetchReleaseNotes } from './release-notes.js';
 
 type Octokit = ReturnType<typeof getOctokit>;
 
@@ -158,7 +159,24 @@ export async function createUpdatePr(
   const currentVersion = dep.dep.gitTag ?? dep.resolvedVersion ?? 'unknown';
   const repoUrl = dep.dep.gitRepository ?? dep.dep.url ?? '';
 
-  const body = [
+  // 7b. Fetch release notes (non-fatal)
+  let releaseNotesSection = '';
+  const currentTag = dep.dep.gitTag ?? dep.resolvedVersion ?? '';
+  if (dep.intermediateTags && dep.intermediateTags.length > 0 && currentTag) {
+    try {
+      releaseNotesSection = await fetchReleaseNotes(
+        octokit,
+        repoUrl,
+        currentTag,
+        version,
+        dep.intermediateTags,
+      );
+    } catch {
+      // Release notes are best-effort — don't fail the PR
+    }
+  }
+
+  const bodyParts = [
     `## Dependency Update`,
     ``,
     `| | |`,
@@ -170,9 +188,18 @@ export async function createUpdatePr(
     `| **Repository** | ${repoUrl} |`,
     `| **File** | \`${edit.file}\` |`,
     ``,
+  ];
+
+  if (releaseNotesSection) {
+    bodyParts.push(releaseNotesSection, ``);
+  }
+
+  bodyParts.push(
     `---`,
     `*This PR was automatically created by [cmake-depcheck](https://github.com/dmnq-f/cmake-depcheck).*`,
-  ].join('\n');
+  );
+
+  const body = bodyParts.join('\n');
 
   const { data: pr } = await octokit.rest.pulls.create({
     owner: ctx.owner,

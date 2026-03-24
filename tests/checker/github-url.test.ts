@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   extractGitHubUrlInfo,
+  extractGitHubOwnerRepo,
   buildUpdatedUrl,
   verifyUrlExists,
 } from '../../src/checker/github-url.js';
@@ -120,6 +121,48 @@ describe('extractGitHubUrlInfo', () => {
     it('malformed URL', () => {
       expect(extractGitHubUrlInfo('not-a-url')).toBeNull();
     });
+  });
+});
+
+describe('extractGitHubOwnerRepo', () => {
+  it('extracts from repository URL with .git suffix', () => {
+    expect(extractGitHubOwnerRepo('https://github.com/owner/repo.git')).toEqual({
+      owner: 'owner',
+      repo: 'repo',
+    });
+  });
+
+  it('extracts from repository URL without .git suffix', () => {
+    expect(extractGitHubOwnerRepo('https://github.com/owner/repo')).toEqual({
+      owner: 'owner',
+      repo: 'repo',
+    });
+  });
+
+  it('extracts from download URLs', () => {
+    const result = extractGitHubOwnerRepo(
+      'https://github.com/owner/repo/releases/download/v1.0/file.tar.gz',
+    );
+    expect(result).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it('extracts from archive URLs', () => {
+    const result = extractGitHubOwnerRepo(
+      'https://github.com/owner/repo/archive/refs/tags/v1.0.tar.gz',
+    );
+    expect(result).toEqual({ owner: 'owner', repo: 'repo' });
+  });
+
+  it('returns null for GitLab URLs', () => {
+    expect(extractGitHubOwnerRepo('https://gitlab.com/owner/repo')).toBeNull();
+  });
+
+  it('returns null for non-URL strings', () => {
+    expect(extractGitHubOwnerRepo('not-a-url')).toBeNull();
+  });
+
+  it('returns null for GitHub URLs with only owner segment', () => {
+    expect(extractGitHubOwnerRepo('https://github.com/owner')).toBeNull();
   });
 });
 

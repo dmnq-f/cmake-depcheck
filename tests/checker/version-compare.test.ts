@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findLatestVersion } from '../../src/checker/version-compare.js';
+import { findLatestVersion, findIntermediateTags } from '../../src/checker/version-compare.js';
 
 describe('findLatestVersion', () => {
   describe('semver comparison', () => {
@@ -89,6 +89,61 @@ describe('findLatestVersion', () => {
     it('handles v-prefixed non-semver tags like v2-14-2', () => {
       const result = findLatestVersion('v2-14-2', ['v2-14-2', 'v2-14-3', 'v2-15-0']);
       expect(result).toEqual({ latest: 'v2-15-0', updateType: 'minor' });
+    });
+  });
+
+  describe('findIntermediateTags', () => {
+    it('returns [latestTag] when current and latest are adjacent', () => {
+      const result = findIntermediateTags('v1.0.0', 'v1.1.0', ['v1.0.0', 'v1.1.0']);
+      expect(result).toEqual(['v1.1.0']);
+    });
+
+    it('returns tags in descending semver order, newest first', () => {
+      const result = findIntermediateTags('v1.0.0', 'v1.3.0', [
+        'v1.0.0',
+        'v1.1.0',
+        'v1.2.0',
+        'v1.3.0',
+      ]);
+      expect(result).toEqual(['v1.3.0', 'v1.2.0', 'v1.1.0']);
+    });
+
+    it('excludes prerelease tags', () => {
+      const result = findIntermediateTags('v1.0.0', 'v1.2.0', [
+        'v1.0.0',
+        'v1.1.0-rc1',
+        'v1.1.0',
+        'v1.2.0-beta.1',
+        'v1.2.0',
+      ]);
+      expect(result).toEqual(['v1.2.0', 'v1.1.0']);
+    });
+
+    it('excludes the current tag, includes the latest tag', () => {
+      const result = findIntermediateTags('v1.0.0', 'v1.2.0', ['v1.0.0', 'v1.1.0', 'v1.2.0']);
+      expect(result).not.toContain('v1.0.0');
+      expect(result).toContain('v1.2.0');
+    });
+
+    it('handles v-prefixed and non-prefixed tags correctly', () => {
+      const result = findIntermediateTags('1.0.0', '1.2.0', ['1.0.0', '1.1.0', '1.2.0']);
+      expect(result).toEqual(['1.2.0', '1.1.0']);
+    });
+
+    it('returns [latestTag] as fallback when tags do not parse as semver', () => {
+      const result = findIntermediateTags('abc', 'def', ['abc', 'def', 'ghi']);
+      expect(result).toEqual(['def']);
+    });
+
+    it('returns [latestTag] when allTags is empty', () => {
+      const result = findIntermediateTags('v1.0.0', 'v2.0.0', []);
+      expect(result).toEqual(['v2.0.0']);
+    });
+
+    it('injects latestTag when allTags has unprefixed variant', () => {
+      const result = findIntermediateTags('v1.0.0', 'v2.0.0', ['1.0.0', '1.1.0', '2.0.0']);
+      expect(result[0]).toBe('v2.0.0');
+      expect(result).toContain('2.0.0');
     });
   });
 

@@ -1,8 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../../src/pr/release-notes.js', () => ({
+  fetchReleaseNotes: vi.fn(),
+}));
+
 import { createUpdatePr, type GitHubContext } from '../../src/pr/github.js';
+import { fetchReleaseNotes } from '../../src/pr/release-notes.js';
 import type { UpdateCheckResult } from '../../src/checker/types.js';
 import type { FileEdit } from '../../src/pr/edit-compute.js';
 import type { FetchContentDependency } from '../../src/parser/types.js';
+
+const mockedFetchReleaseNotes = vi.mocked(fetchReleaseNotes);
 
 function makeDep(overrides: Partial<FetchContentDependency> = {}): FetchContentDependency {
   return {
@@ -73,6 +81,7 @@ describe('createUpdatePr', () => {
 
   beforeEach(() => {
     octokit = createMockOctokit();
+    mockedFetchReleaseNotes.mockReset();
   });
 
   it('skips when branch already exists', async () => {
@@ -297,6 +306,75 @@ describe('createUpdatePr', () => {
 
     expect(octokit.rest.issues.getLabel).not.toHaveBeenCalled();
     expect(octokit.rest.issues.createLabel).not.toHaveBeenCalled();
+  });
+
+  describe('release notes in PR body', () => {
+    function setupHappyPath(octokit: MockOctokit) {
+      octokit.rest.git.getRef
+        .mockRejectedValueOnce({ status: 404 })
+        .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
+
+      const content = Buffer.from('GIT_TAG v10.2.1\n').toString('base64');
+      octokit.rest.repos.getContent.mockResolvedValue({
+        data: { content, sha: 'file-sha' },
+      });
+      octokit.rest.git.createRef.mockResolvedValue({});
+      octokit.rest.repos.createOrUpdateFileContents.mockResolvedValue({});
+      octokit.rest.issues.addLabels.mockResolvedValue({});
+      octokit.rest.pulls.create.mockResolvedValue({
+        data: { number: 99, html_url: 'https://github.com/testowner/testrepo/pull/99' },
+      });
+    }
+
+    it('includes release notes when intermediateTags is present', async () => {
+      setupHappyPath(octokit);
+      mockedFetchReleaseNotes.mockResolvedValueOnce('### Release Notes\n\nSome notes');
+
+      const dep = makeUpdateResult({ intermediateTags: ['v12.1.0', 'v11.0.0'] });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await createUpdatePr(octokit as any, ctx, dep, edit);
+
+      const body = octokit.rest.pulls.create.mock.calls[0][0].body as string;
+      expect(body).toContain('### Release Notes');
+      expect(body).toContain('Some notes');
+    });
+
+    it('body is unchanged when intermediateTags is absent', async () => {
+      setupHappyPath(octokit);
+
+      const dep = makeUpdateResult();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await createUpdatePr(octokit as any, ctx, dep, edit);
+
+      const body = octokit.rest.pulls.create.mock.calls[0][0].body as string;
+      expect(body).not.toContain('Release Notes');
+      expect(mockedFetchReleaseNotes).not.toHaveBeenCalled();
+    });
+
+    it('body is unchanged when fetchReleaseNotes returns empty string', async () => {
+      setupHappyPath(octokit);
+      mockedFetchReleaseNotes.mockResolvedValueOnce('');
+
+      const dep = makeUpdateResult({ intermediateTags: ['v12.1.0'] });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await createUpdatePr(octokit as any, ctx, dep, edit);
+
+      const body = octokit.rest.pulls.create.mock.calls[0][0].body as string;
+      expect(body).not.toContain('Release Notes');
+      // No extra blank lines between table and footer
+      expect(body).toContain('|\n\n---');
+    });
+
+    it('PR creation succeeds when fetchReleaseNotes throws', async () => {
+      setupHappyPath(octokit);
+      mockedFetchReleaseNotes.mockRejectedValueOnce(new Error('unexpected'));
+
+      const dep = makeUpdateResult({ intermediateTags: ['v12.1.0'] });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await createUpdatePr(octokit as any, ctx, dep, edit);
+
+      expect(result.prNumber).toBe(99);
+    });
   });
 
   it('ensureLabel creates label when it does not exist', async () => {

@@ -142,6 +142,46 @@ function tryPrefixBased(currentTag: string, allTags: string[]): VersionResult | 
 }
 
 /**
+ * Find all tags strictly between currentTag and latestTag, sorted newest-first.
+ * Only includes non-prerelease semver tags (or prefix-matched equivalents).
+ * Always includes latestTag as the first element (injected if not present in allTags).
+ */
+export function findIntermediateTags(
+  currentTag: string,
+  latestTag: string,
+  allTags: string[],
+): string[] {
+  const currentParsed = parseSemver(currentTag);
+  const latestParsed = parseSemver(latestTag);
+
+  if (!currentParsed || !latestParsed) {
+    return [latestTag];
+  }
+
+  const intermediate: { tag: string; parsed: semver.SemVer }[] = [];
+
+  for (const tag of allTags) {
+    const parsed = parseSemver(tag);
+    if (!parsed) continue;
+    if (parsed.prerelease.length > 0) continue;
+    if (semver.gt(parsed, currentParsed) && semver.lte(parsed, latestParsed)) {
+      intermediate.push({ tag, parsed });
+    }
+  }
+
+  intermediate.sort((a, b) => semver.rcompare(a.parsed, b.parsed));
+
+  const result = intermediate.map((i) => i.tag);
+
+  // Guarantee latestTag is always present as the first element
+  if (result.length === 0 || result[0] !== latestTag) {
+    result.unshift(latestTag);
+  }
+
+  return result;
+}
+
+/**
  * Find the latest version from a list of remote tags compared to the current tag.
  *
  * Returns:
