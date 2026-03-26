@@ -27,7 +27,7 @@ jobs:
       - run: npm publish --provenance --access public
 
   release-action:
-    name: Build and tag action bundle
+    name: Update major version tag
     needs: publish-npm
     runs-on: ubuntu-latest
     permissions:
@@ -37,15 +37,7 @@ jobs:
         with:
           ref: ${{ github.event.release.tag_name }}
 
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: '.nvmrc'
-          cache: 'npm'
-
-      - run: npm ci
-      - run: npm run build:action
-
-      - name: Attach dist and update tags
+      - name: Update major version tag
         run: |
           VERSION="${{ github.event.release.tag_name }}"
           MAJOR=$(echo "$VERSION" | sed 's/\..*//')
@@ -53,11 +45,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          git add -f dist/action/
-          git commit -m "Build action bundle for $VERSION"
-
-          git tag -fa "$VERSION" -m "$VERSION"
           git tag -fa "$MAJOR" -m "Update $MAJOR tag"
-
-          git push origin "$VERSION" --force
           git push origin "$MAJOR" --force

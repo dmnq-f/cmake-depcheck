@@ -5,10 +5,14 @@ repos:
       - id: check-case-conflict
       - id: check-yaml
       - id: end-of-file-fixer
+        exclude: ^dist/
       - id: fix-byte-order-marker
+        exclude: ^dist/
       - id: mixed-line-ending
         args: ["--fix=no"]
+        exclude: ^dist/
       - id: trailing-whitespace
+        exclude: ^dist/
 
   - repo: local
     hooks:

@@ -30,6 +30,13 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm run build:action
+      - name: Verify dist/action/ is up-to-date
+        run: |
+          if ! git diff --quiet --exit-code dist/action/; then
+            echo "::error::dist/action/ is out of date. Run 'npm run build:action' and commit the result."
+            git diff --stat dist/action/
+            exit 1
+          fi
 
   release-please:
     name: Release Please
