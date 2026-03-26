@@ -27,6 +27,7 @@ function makeResult(
 function baseOptions(overrides: Partial<JsonOutputOptions> = {}): JsonOutputOptions {
   return {
     deps: [makeDep()],
+    allDepNames: ['googletest'],
     basePath: '/project',
     ignoredCount: 0,
     filteredCount: 0,

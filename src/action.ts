@@ -156,8 +156,15 @@ export async function run(): Promise<void> {
     const updatable = result.updateResults.filter((r) => r.status === 'update-available');
     if (updatable.length > 0) {
       const token = core.getInput('token');
-      const prResults = await createPullRequests(result.updateResults, result.vars, token, dryRun);
-      prsCreated = prResults.filter((r) => r.prNumber !== undefined).length;
+      const scannedDepNames = new Set(result.allDepNames);
+      const prResults = await createPullRequests(
+        result.updateResults,
+        result.vars,
+        token,
+        dryRun,
+        scannedDepNames,
+      );
+      prsCreated = prResults.filter((r) => r.action === 'created' && !r.dryRun).length;
       appendPrSummary(prResults, dryRun);
     }
   }
@@ -173,15 +180,26 @@ function appendPrSummary(prResults: PrResult[], dryRun: boolean): void {
   if (prResults.length === 0) return;
 
   const prRows = prResults.map((r) => {
+    const prefix = r.dryRun ? '[dry-run] ' : '';
     let status: string;
-    if (r.prNumber) {
-      status = `#${r.prNumber}`;
-    } else if (r.skipped) {
-      status = `skipped (${r.skipped})`;
-    } else if (r.error) {
-      status = `failed: ${r.error}`;
-    } else {
-      status = 'unknown';
+    switch (r.action) {
+      case 'created':
+        status = r.dryRun ? `${prefix}would create PR` : `#${r.prNumber}`;
+        break;
+      case 'updated':
+        status = r.dryRun ? `${prefix}would update PR #${r.prNumber}` : `#${r.prNumber} (updated)`;
+        break;
+      case 'closed-stale':
+        status = r.dryRun
+          ? `${prefix}would close stale PR #${r.closedPrNumber}`
+          : `closed stale PR #${r.closedPrNumber}`;
+        break;
+      case 'skipped':
+        status = `skipped (${r.skipped})`;
+        break;
+      case 'error':
+        status = `failed: ${r.error}`;
+        break;
     }
     return [r.name, status];
   });

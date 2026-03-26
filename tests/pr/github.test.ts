@@ -4,7 +4,7 @@ vi.mock('../../src/pr/release-notes.js', () => ({
   fetchReleaseNotes: vi.fn(),
 }));
 
-import { createUpdatePr, type GitHubContext } from '../../src/pr/github.js';
+import { createUpdatePr, branchName, type GitHubContext } from '../../src/pr/github.js';
 import { fetchReleaseNotes } from '../../src/pr/release-notes.js';
 import type { UpdateCheckResult } from '../../src/checker/types.js';
 import type { FileEdit } from '../../src/pr/edit-compute.js';
@@ -76,6 +76,39 @@ function createMockOctokit() {
 
 type MockOctokit = ReturnType<typeof createMockOctokit>;
 
+describe('branchName', () => {
+  it('produces consistent hash for same file and line', () => {
+    const a = branchName('fmt', 'CMakeLists.txt', 10);
+    const b = branchName('fmt', 'CMakeLists.txt', 10);
+    expect(a).toBe(b);
+  });
+
+  it('produces different hash for different line, same file', () => {
+    const a = branchName('fmt', 'CMakeLists.txt', 10);
+    const b = branchName('fmt', 'CMakeLists.txt', 20);
+    expect(a).not.toBe(b);
+  });
+
+  it('produces different hash for different file, same line', () => {
+    const a = branchName('fmt', 'CMakeLists.txt', 10);
+    const b = branchName('fmt', 'src/CMakeLists.txt', 10);
+    expect(a).not.toBe(b);
+  });
+
+  it('includes dep name in the branch', () => {
+    const branch = branchName('fmt', 'CMakeLists.txt', 10);
+    expect(branch).toMatch(/^cmake-depcheck\/update-fmt-[0-9a-f]{8}$/);
+  });
+
+  it('uses repo-relative paths consistently', () => {
+    // Absolute paths should NOT be used, but if the same relative path is passed
+    // from different machines, the hash should be identical
+    const a = branchName('fmt', 'src/deps/CMakeLists.txt', 5);
+    const b = branchName('fmt', 'src/deps/CMakeLists.txt', 5);
+    expect(a).toBe(b);
+  });
+});
+
 describe('createUpdatePr', () => {
   let octokit: MockOctokit;
 
@@ -90,34 +123,24 @@ describe('createUpdatePr', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), edit);
 
-    expect(result).toEqual({ name: 'fmt', skipped: 'branch exists' });
+    expect(result).toEqual({ name: 'fmt', action: 'skipped', skipped: 'branch exists' });
     expect(octokit.rest.repos.getContent).not.toHaveBeenCalled();
   });
 
   it('creates branch, commits, and opens PR on happy path', async () => {
-    // Branch doesn't exist
     octokit.rest.git.getRef
-      .mockRejectedValueOnce({ status: 404 }) // branch check
-      .mockResolvedValueOnce({ data: { object: { sha: 'base-sha-123' } } }); // default branch HEAD
+      .mockRejectedValueOnce({ status: 404 })
+      .mockResolvedValueOnce({ data: { object: { sha: 'base-sha-123' } } });
 
-    // File content — GIT_TAG is on line 3, after the FetchContent_Declare start (edit.line=1)
     const content = Buffer.from(
       'FetchContent_Declare(\n  freetype\n  GIT_TAG v10.2.1\n)\n',
     ).toString('base64');
     octokit.rest.repos.getContent.mockResolvedValue({
       data: { content, sha: 'file-sha-456' },
     });
-
-    // Branch creation
     octokit.rest.git.createRef.mockResolvedValue({});
-
-    // File update
     octokit.rest.repos.createOrUpdateFileContents.mockResolvedValue({});
-
-    // Label
     octokit.rest.issues.addLabels.mockResolvedValue({});
-
-    // PR creation
     octokit.rest.pulls.create.mockResolvedValue({
       data: { number: 42, html_url: 'https://github.com/testowner/testrepo/pull/42' },
     });
@@ -127,35 +150,58 @@ describe('createUpdatePr', () => {
 
     expect(result).toEqual({
       name: 'fmt',
+      action: 'created',
       prNumber: 42,
       prUrl: 'https://github.com/testowner/testrepo/pull/42',
     });
 
-    // Verify branch was created from default branch HEAD
+    // Branch name uses location hash, not version
+    const expectedBranch = branchName('fmt', 'CMakeLists.txt', 1);
     expect(octokit.rest.git.createRef).toHaveBeenCalledWith({
       owner: 'testowner',
       repo: 'testrepo',
-      ref: 'refs/heads/cmake-depcheck/update-fmt-12.1.0',
+      ref: `refs/heads/${expectedBranch}`,
       sha: 'base-sha-123',
     });
 
-    // Verify file was updated with correct content
     expect(octokit.rest.repos.createOrUpdateFileContents).toHaveBeenCalledWith(
       expect.objectContaining({
         path: 'CMakeLists.txt',
-        branch: 'cmake-depcheck/update-fmt-12.1.0',
+        branch: expectedBranch,
         sha: 'file-sha-456',
       }),
     );
 
-    // Verify PR was opened
     expect(octokit.rest.pulls.create).toHaveBeenCalledWith(
       expect.objectContaining({
         title: 'chore(deps): update fmt to 12.1.0',
-        head: 'cmake-depcheck/update-fmt-12.1.0',
+        head: expectedBranch,
         base: 'main',
       }),
     );
+  });
+
+  it('PR body contains edit marker', async () => {
+    octokit.rest.git.getRef
+      .mockRejectedValueOnce({ status: 404 })
+      .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
+
+    const content = Buffer.from('GIT_TAG v10.2.1\n').toString('base64');
+    octokit.rest.repos.getContent.mockResolvedValue({
+      data: { content, sha: 'file-sha' },
+    });
+    octokit.rest.git.createRef.mockResolvedValue({});
+    octokit.rest.repos.createOrUpdateFileContents.mockResolvedValue({});
+    octokit.rest.issues.addLabels.mockResolvedValue({});
+    octokit.rest.pulls.create.mockResolvedValue({
+      data: { number: 1, html_url: 'url' },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await createUpdatePr(octokit as any, ctx, makeUpdateResult(), edit);
+
+    const body = octokit.rest.pulls.create.mock.calls[0][0].body as string;
+    expect(body).toContain('<!-- cmake-depcheck:edit:v12.1.0 -->');
   });
 
   it('finds GIT_TAG on a line after startLine within the block', async () => {
@@ -163,7 +209,6 @@ describe('createUpdatePr', () => {
       .mockRejectedValueOnce({ status: 404 })
       .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
 
-    // GIT_TAG is on line 4, but edit.line (startLine) is 1
     const fileContent = [
       'FetchContent_Declare(',
       '  freetype',
@@ -195,7 +240,6 @@ describe('createUpdatePr', () => {
 
     expect(result.prNumber).toBe(10);
 
-    // Verify the committed content has the replacement on the correct line
     const committedContent = Buffer.from(
       octokit.rest.repos.createOrUpdateFileContents.mock.calls[0][0].content,
       'base64',
@@ -209,16 +253,14 @@ describe('createUpdatePr', () => {
       .mockRejectedValueOnce({ status: 404 })
       .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
 
-    // Version "1.2.3" appears on line 1 (a comment), but the block is lines 3-6.
-    // The search should NOT match the comment.
     const fileContent = [
-      '# Using version 1.2.3 of somelib', // line 1
-      '', // line 2
-      'FetchContent_Declare(', // line 3
-      '  somelib', // line 4
-      '  GIT_REPOSITORY https://x.git', // line 5
-      '  GIT_TAG 1.2.3', // line 6
-      ')', // line 7
+      '# Using version 1.2.3 of somelib',
+      '',
+      'FetchContent_Declare(',
+      '  somelib',
+      '  GIT_REPOSITORY https://x.git',
+      '  GIT_TAG 1.2.3',
+      ')',
     ].join('\n');
     const content = Buffer.from(fileContent).toString('base64');
     octokit.rest.repos.getContent.mockResolvedValue({
@@ -243,7 +285,6 @@ describe('createUpdatePr', () => {
     const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), depEdit);
     expect(result.prNumber).toBe(11);
 
-    // The comment on line 1 should be untouched
     const committedContent = Buffer.from(
       octokit.rest.repos.createOrUpdateFileContents.mock.calls[0][0].content,
       'base64',
@@ -265,6 +306,7 @@ describe('createUpdatePr', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), edit);
 
+    expect(result.action).toBe('error');
     expect(result.error).toMatch(/Could not find.*between lines/);
     expect(octokit.rest.git.createRef).not.toHaveBeenCalled();
   });
@@ -274,7 +316,6 @@ describe('createUpdatePr', () => {
       .mockRejectedValueOnce({ status: 404 })
       .mockResolvedValueOnce({ data: { object: { sha: 'base-sha' } } });
 
-    // Directory listing instead of file content
     octokit.rest.repos.getContent.mockResolvedValue({
       data: [{ name: 'file1' }],
     });
@@ -282,6 +323,7 @@ describe('createUpdatePr', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await createUpdatePr(octokit as any, ctx, makeUpdateResult(), edit);
 
+    expect(result.action).toBe('error');
     expect(result.error).toMatch(/Could not read file/);
   });
 
@@ -361,7 +403,6 @@ describe('createUpdatePr', () => {
 
       const body = octokit.rest.pulls.create.mock.calls[0][0].body as string;
       expect(body).not.toContain('Release Notes');
-      // No extra blank lines between table and footer
       expect(body).toContain('|\n\n---');
     });
 

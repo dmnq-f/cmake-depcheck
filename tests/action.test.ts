@@ -77,8 +77,10 @@ function makeResult(
   deps?: FetchContentDependency[],
   overrides?: Partial<ScanResult>,
 ): ScanResult {
+  const allDeps = deps ?? updateResults?.map((r) => r.dep) ?? [];
   return {
-    deps: deps ?? updateResults?.map((r) => r.dep) ?? [],
+    deps: allDeps,
+    allDepNames: allDeps.map((d) => d.name),
     basePath: process.cwd(),
     scanMode: 'chain',
     filesScanned: [`${process.cwd()}/CMakeLists.txt`],
@@ -420,11 +422,22 @@ describe('action', () => {
       ];
       mockScan.mockResolvedValue(makeResult(results));
       mockCreatePullRequests.mockResolvedValue([
-        { name: 'testlib', prNumber: 42, prUrl: 'https://github.com/test/testrepo/pull/42' },
+        {
+          name: 'testlib',
+          action: 'created',
+          prNumber: 42,
+          prUrl: 'https://github.com/test/testrepo/pull/42',
+        },
       ]);
       await runAction();
 
-      expect(mockCreatePullRequests).toHaveBeenCalledWith(results, undefined, 'fake-token', false);
+      expect(mockCreatePullRequests).toHaveBeenCalledWith(
+        results,
+        undefined,
+        'fake-token',
+        false,
+        new Set(['testlib']),
+      );
       expect(mockSetOutput).toHaveBeenCalledWith('prs-created', '1');
     });
 
@@ -450,10 +463,18 @@ describe('action', () => {
         },
       ];
       mockScan.mockResolvedValue(makeResult(results));
-      mockCreatePullRequests.mockResolvedValue([{ name: 'testlib', skipped: 'dry-run' }]);
+      mockCreatePullRequests.mockResolvedValue([
+        { name: 'testlib', action: 'created', dryRun: true },
+      ]);
       await runAction();
 
-      expect(mockCreatePullRequests).toHaveBeenCalledWith(results, undefined, 'fake-token', true);
+      expect(mockCreatePullRequests).toHaveBeenCalledWith(
+        results,
+        undefined,
+        'fake-token',
+        true,
+        new Set(['testlib']),
+      );
       expect(mockSetOutput).toHaveBeenCalledWith('prs-created', '0');
     });
 

@@ -1,6 +1,8 @@
+import { createHash } from 'node:crypto';
 import type { getOctokit } from '@actions/github';
 import type { UpdateCheckResult } from '../checker/types.js';
 import type { FileEdit } from './edit-compute.js';
+import { buildEditMarker } from './edit-marker.js';
 import { fetchReleaseNotes } from './release-notes.js';
 
 type Octokit = ReturnType<typeof getOctokit>;
@@ -14,21 +16,37 @@ export interface GitHubContext {
 export interface PrResult {
   /** Dependency name */
   name: string;
-  /** PR number if created */
+  /** What happened to this dependency's PR */
+  action: 'created' | 'updated' | 'closed-stale' | 'skipped' | 'error';
+  /** PR number (for created/updated) */
   prNumber?: number;
-  /** PR URL if created */
+  /** PR URL (for created/updated) */
   prUrl?: string;
-  /** Reason if skipped */
+  /** Reason (for skipped) */
   skipped?: string;
-  /** Error message if failed */
+  /** Error message (for error) */
   error?: string;
+  /** The PR number that was closed (for closed-stale) */
+  closedPrNumber?: number;
+  /** True when the action was not actually performed (dry-run mode) */
+  dryRun?: boolean;
 }
 
-function branchName(depName: string, version: string): string {
-  return `cmake-depcheck/update-${depName}-${version}`;
+function locationHash(file: string, line: number): string {
+  return createHash('sha256').update(`${file}:${line}`).digest('hex').slice(0, 8);
 }
 
-function updateTypeLabel(type?: 'major' | 'minor' | 'patch'): string {
+/**
+ * Compute the branch name for a dependency update PR.
+ * @param depName - Dependency name
+ * @param file - Repo-relative file path (NOT absolute)
+ * @param line - 1-based start line of the edit target
+ */
+export function branchName(depName: string, file: string, line: number): string {
+  return `cmake-depcheck/update-${depName}-${locationHash(file, line)}`;
+}
+
+export function updateTypeLabel(type?: 'major' | 'minor' | 'patch'): string {
   return type ?? 'unknown';
 }
 
@@ -74,6 +92,47 @@ export async function ensureLabel(octokit: Octokit, ctx: GitHubContext): Promise
   }
 }
 
+/**
+ * Build the standard PR body for a dependency update.
+ * Exported for reuse by the updater when refreshing PR bodies.
+ */
+export function buildPrBody(
+  name: string,
+  currentVersion: string,
+  version: string,
+  updateType: string,
+  repoUrl: string,
+  file: string,
+  editNewText: string,
+  releaseNotesSection?: string,
+): string {
+  const bodyParts = [
+    `## Dependency Update`,
+    ``,
+    `| | |`,
+    `|---|---|`,
+    `| **Package** | ${name} |`,
+    `| **Current** | \`${currentVersion}\` |`,
+    `| **Latest** | \`${version}\` |`,
+    `| **Update type** | ${updateType} |`,
+    `| **Repository** | ${repoUrl} |`,
+    `| **File** | \`${file}\` |`,
+    ``,
+  ];
+
+  if (releaseNotesSection) {
+    bodyParts.push(releaseNotesSection, ``);
+  }
+
+  bodyParts.push(
+    `---`,
+    `*This PR was automatically created by [cmake-depcheck](https://github.com/dmnq-f/cmake-depcheck).*`,
+    buildEditMarker(editNewText),
+  );
+
+  return bodyParts.join('\n');
+}
+
 export async function createUpdatePr(
   octokit: Octokit,
   ctx: GitHubContext,
@@ -82,11 +141,11 @@ export async function createUpdatePr(
 ): Promise<PrResult> {
   const name = dep.dep.name;
   const version = dep.latestVersion!;
-  const branch = branchName(name, version);
+  const branch = branchName(name, edit.file, edit.line);
 
-  // 1. Check if branch already exists
+  // 1. Check if branch already exists (orphaned branch without a PR)
   if (await branchExists(octokit, ctx, branch)) {
-    return { name, skipped: 'branch exists' };
+    return { name, action: 'skipped', skipped: 'branch exists' };
   }
 
   // 2. Get default branch HEAD SHA
@@ -106,15 +165,12 @@ export async function createUpdatePr(
   });
 
   if (!('content' in fileData) || !('sha' in fileData)) {
-    return { name, error: `Could not read file ${edit.file} from repository` };
+    return { name, action: 'error', error: `Could not read file ${edit.file} from repository` };
   }
 
   const content = Buffer.from(fileData.content, 'base64').toString('utf-8');
 
   // 4. Apply line-scoped text replacement
-  // Search within [edit.line, edit.endLine] for the line containing the old text.
-  // For variable edits line === endLine (exact). For literal GIT_TAG/URL edits the
-  // range spans the FetchContent_Declare block.
   const lines = content.split('\n');
   const searchStart = edit.line - 1;
   const searchEnd = Math.min(edit.endLine, lines.length);
@@ -129,6 +185,7 @@ export async function createUpdatePr(
   if (matchIdx === -1) {
     return {
       name,
+      action: 'error',
       error: `Could not find "${edit.oldText}" in ${edit.file} between lines ${edit.line}–${edit.endLine} (file may have been modified)`,
     };
   }
@@ -155,11 +212,10 @@ export async function createUpdatePr(
     branch,
   });
 
-  // 7. Open PR
+  // 7. Build PR body and open PR
   const currentVersion = dep.dep.gitTag ?? dep.resolvedVersion ?? 'unknown';
   const repoUrl = dep.dep.gitRepository ?? dep.dep.url ?? '';
 
-  // 7b. Fetch release notes (non-fatal)
   let releaseNotesSection = '';
   const currentTag = dep.dep.gitTag ?? dep.resolvedVersion ?? '';
   if (dep.intermediateTags && dep.intermediateTags.length > 0 && currentTag) {
@@ -176,30 +232,16 @@ export async function createUpdatePr(
     }
   }
 
-  const bodyParts = [
-    `## Dependency Update`,
-    ``,
-    `| | |`,
-    `|---|---|`,
-    `| **Package** | ${name} |`,
-    `| **Current** | \`${currentVersion}\` |`,
-    `| **Latest** | \`${version}\` |`,
-    `| **Update type** | ${updateTypeLabel(dep.updateType)} |`,
-    `| **Repository** | ${repoUrl} |`,
-    `| **File** | \`${edit.file}\` |`,
-    ``,
-  ];
-
-  if (releaseNotesSection) {
-    bodyParts.push(releaseNotesSection, ``);
-  }
-
-  bodyParts.push(
-    `---`,
-    `*This PR was automatically created by [cmake-depcheck](https://github.com/dmnq-f/cmake-depcheck).*`,
+  const body = buildPrBody(
+    name,
+    currentVersion,
+    version,
+    updateTypeLabel(dep.updateType),
+    repoUrl,
+    edit.file,
+    edit.newText,
+    releaseNotesSection,
   );
-
-  const body = bodyParts.join('\n');
 
   const { data: pr } = await octokit.rest.pulls.create({
     owner: ctx.owner,
@@ -222,5 +264,5 @@ export async function createUpdatePr(
     // Label assignment failed — not fatal
   }
 
-  return { name, prNumber: pr.number, prUrl: pr.html_url };
+  return { name, action: 'created', prNumber: pr.number, prUrl: pr.html_url };
 }

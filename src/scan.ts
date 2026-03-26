@@ -26,6 +26,9 @@ export interface ScanOptions {
 export interface ScanResult {
   /** Discovered dependencies (post-ignore filtering) */
   deps: FetchContentDependency[];
+  /** All dependency names discovered in scanned files, before ignore filtering.
+   *  Used by PR lifecycle management to scope stale PR cleanup. */
+  allDepNames: string[];
   /** Absolute base path for relativizing locations */
   basePath: string;
   /** How files were discovered */
@@ -77,6 +80,9 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
     resolveDependencyVariables(deps, chain.vars);
   }
 
+  // Capture all dep names before ignore filtering (for PR cleanup scoping)
+  const allDepNames = deps.map((d) => d.name);
+
   let ignoredCount = 0;
   if (options.ignoreNames && options.ignoreNames.length > 0) {
     const patterns = options.ignoreNames.map((name) => {
@@ -113,6 +119,7 @@ export async function scan(options: ScanOptions): Promise<ScanResult> {
 
   return {
     deps,
+    allDepNames,
     basePath,
     scanMode,
     filesScanned,
