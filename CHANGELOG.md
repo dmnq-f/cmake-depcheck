@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1](https://github.com/dmnq-f/cmake-depcheck/compare/v2.0.0...v2.0.1) (2026-04-14)
+
+
+### Bug Fixes
+
+* Recompute gitTagIsSha after chain variable resolution ([abd0f32](https://github.com/dmnq-f/cmake-depcheck/commit/abd0f32a92361da496143368de88a43246c341fe))
+
 ## [2.0.0](https://github.com/dmnq-f/cmake-depcheck/compare/v1.3.0...v2.0.0) (2026-03-26)
 
 
