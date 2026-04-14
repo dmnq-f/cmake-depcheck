@@ -55,6 +55,18 @@ describe('scan()', () => {
       expect(result.deps).toHaveLength(1);
       expect(result.deps[0].gitTag).toBe('v1.17.0');
     });
+
+    it('refreshes gitTagIsSha after resolving a SHA stored in a variable', async () => {
+      const result = await scan({
+        path: path.join(FIXTURES, 'sha-in-variable', 'CMakeLists.txt'),
+        scanOnly: true,
+      });
+      expect(result.deps).toHaveLength(1);
+      const dep = result.deps[0];
+      expect(dep.gitTag).toBe('c740f0fda4274d6ffd2e5b64a25b06ef69803a07');
+      expect(dep.gitTagRaw).toBe('${FREETYPE_GIT_COMMIT}');
+      expect(dep.gitTagIsSha).toBe(true);
+    });
   });
 
   describe('ignore filtering', () => {

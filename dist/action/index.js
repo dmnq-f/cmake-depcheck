@@ -28750,6 +28750,7 @@ function resolveDependencyVariables(deps, vars) {
         if (dep.gitTag?.includes('${')) {
             dep.gitTagRaw = dep.gitTag;
             dep.gitTag = resolveVariables(dep.gitTag, vars) ?? dep.gitTag;
+            dep.gitTagIsSha = SHA_PATTERN.test(dep.gitTag);
         }
         if (dep.url?.includes('${')) {
             dep.urlRaw = dep.url;

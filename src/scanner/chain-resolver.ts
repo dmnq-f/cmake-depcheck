@@ -1,6 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { findClosingParen, lineNumberAt, stripComments, tokenize } from '../cmake-utils.js';
+import { SHA_PATTERN } from '../constants.js';
 import { FetchContentDependency } from '../parser/types.js';
 
 export interface VariableInfo {
@@ -261,6 +262,7 @@ export function resolveDependencyVariables(
     if (dep.gitTag?.includes('${')) {
       dep.gitTagRaw = dep.gitTag;
       dep.gitTag = resolveVariables(dep.gitTag, vars) ?? dep.gitTag;
+      dep.gitTagIsSha = SHA_PATTERN.test(dep.gitTag);
     }
     if (dep.url?.includes('${')) {
       dep.urlRaw = dep.url;
