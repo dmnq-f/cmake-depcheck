@@ -1,32 +1,37 @@
 import { execFile } from 'node:child_process';
 
 /**
- * A tag from `git ls-remote --tags` paired with its commit SHA.
+ * A tag from `git ls-remote --tags` paired with both SHAs it may be pinned by.
  *
- * For annotated tags the commit SHA is the dereferenced (`refs/tags/X^{}`)
- * SHA — the commit users land on after `git clone --branch X` — not the
- * tag-object SHA. For lightweight tags it's the only SHA present.
+ * - `commitSha` is the dereferenced (`refs/tags/X^{}`) SHA for annotated tags,
+ *   i.e. the commit `git clone --branch X` lands on.
+ * - `tagSha` is the bare `refs/tags/X` SHA — the tag-object SHA for annotated
+ *   tags, identical to `commitSha` for lightweight tags.
+ *
+ * Users pin either the commit SHA (what `git rev-parse HEAD` returns) or the
+ * tag-object SHA (what `git rev-parse refs/tags/X` returns for annotated tags).
  */
 export interface TagInfo {
   /** Tag name with the `refs/tags/` prefix and any `^{}` suffix stripped. */
   tag: string;
-  /** Commit SHA the tag points to (40-char hex). */
+  /** Dereferenced commit SHA (the commit the tag ultimately points at). */
   commitSha: string;
+  /** Bare `refs/tags/X` SHA. Equals `commitSha` for lightweight tags. */
+  tagSha: string;
 }
 
 /**
- * Parse raw `git ls-remote --tags` output into tag/commit-SHA pairs.
+ * Parse raw `git ls-remote --tags` output into tag/SHA records.
  *
- * For each tag, the dereferenced (`refs/tags/X^{}`) entry wins over the bare
- * `refs/tags/X` entry — annotated tags report the tag-object SHA on the bare
- * ref, but we want the commit SHA. Lightweight tags only have the bare entry,
- * which is already a commit SHA.
+ * For each tag we capture both the bare-ref SHA and the dereferenced
+ * (`refs/tags/X^{}`) SHA when present. Lightweight tags only have the bare
+ * entry; in that case both fields hold the same value (already a commit SHA).
  */
 export function parseGitLsRemoteOutput(raw: string): TagInfo[] {
   if (!raw.trim()) return [];
 
   const order: string[] = [];
-  const byTag = new Map<string, { commitSha: string; dereferenced: boolean }>();
+  const byTag = new Map<string, { tagSha: string; commitSha: string }>();
 
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
@@ -40,15 +45,19 @@ export function parseGitLsRemoteOutput(raw: string): TagInfo[] {
 
     const existing = byTag.get(tag);
     if (!existing) {
-      byTag.set(tag, { commitSha: sha, dereferenced });
+      byTag.set(tag, { tagSha: sha, commitSha: sha });
       order.push(tag);
     } else if (dereferenced) {
       existing.commitSha = sha;
-      existing.dereferenced = true;
+    } else {
+      existing.tagSha = sha;
     }
   }
 
-  return order.map((tag) => ({ tag, commitSha: byTag.get(tag)!.commitSha }));
+  return order.map((tag) => {
+    const entry = byTag.get(tag)!;
+    return { tag, commitSha: entry.commitSha, tagSha: entry.tagSha };
+  });
 }
 
 /**

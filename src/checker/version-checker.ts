@@ -153,16 +153,21 @@ export async function checkForUpdates(
 
     const tagInfos = repoTags.get(repoUrl) ?? [];
 
-    // SHA reverse-resolution: find the upstream tag whose commit SHA matches the pinned SHA
+    // SHA reverse-resolution: find the upstream tag whose SHA matches the pinned SHA.
+    // Accept either the commit SHA or the tag-object SHA — users pin either convention.
     let resolvedTag: string | undefined;
+    let pinStyle: 'commit' | 'tag' = 'commit';
     if (isShaPinned) {
       const pinnedSha = dep.gitTag!.toLowerCase();
-      const match = tagInfos.find((t) => t.commitSha.toLowerCase() === pinnedSha);
+      const match = tagInfos.find(
+        (t) => t.commitSha.toLowerCase() === pinnedSha || t.tagSha.toLowerCase() === pinnedSha,
+      );
       if (!match) {
         results.set(dep, { dep, status: 'pinned', versionSource: 'sha' });
         continue;
       }
       resolvedTag = match.tag;
+      pinStyle = match.tagSha.toLowerCase() === pinnedSha ? 'tag' : 'commit';
     }
 
     const currentTag = resolvedTag ?? (ghInfo ? ghInfo.tag : dep.gitTag!);
@@ -231,10 +236,13 @@ export async function checkForUpdates(
         intermediateTags: findIntermediateTags(currentTag, versionResult.latest, tags),
       });
     } else {
-      // Git dep (literal tag OR SHA-resolved) with an available update
-      const latestSha = isShaPinned
-        ? tagInfos.find((t) => t.tag === versionResult.latest)?.commitSha
-        : undefined;
+      // Git dep (literal tag OR SHA-resolved) with an available update.
+      // For SHA-resolved deps, preserve the user's pin convention (commit vs tag-object SHA).
+      let latestSha: string | undefined;
+      if (isShaPinned) {
+        const latestInfo = tagInfos.find((t) => t.tag === versionResult.latest);
+        latestSha = pinStyle === 'tag' ? latestInfo?.tagSha : latestInfo?.commitSha;
+      }
       results.set(dep, {
         dep,
         status: 'update-available',

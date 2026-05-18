@@ -10,13 +10,25 @@ describe('parseGitLsRemoteOutput', () => {
     ].join('\n');
 
     expect(parseGitLsRemoteOutput(raw)).toEqual([
-      { tag: 'v1.0.0', commitSha: 'abc123def456abc123def456abc123def456abc12345' },
-      { tag: 'v1.1.0', commitSha: 'def456abc123def456abc123def456abc123def45678' },
-      { tag: 'v2.0.0', commitSha: 'ghi789abc123def456abc123def456abc123def45678' },
+      {
+        tag: 'v1.0.0',
+        commitSha: 'abc123def456abc123def456abc123def456abc12345',
+        tagSha: 'abc123def456abc123def456abc123def456abc12345',
+      },
+      {
+        tag: 'v1.1.0',
+        commitSha: 'def456abc123def456abc123def456abc123def45678',
+        tagSha: 'def456abc123def456abc123def456abc123def45678',
+      },
+      {
+        tag: 'v2.0.0',
+        commitSha: 'ghi789abc123def456abc123def456abc123def45678',
+        tagSha: 'ghi789abc123def456abc123def456abc123def45678',
+      },
     ]);
   });
 
-  it('prefers ^{} (commit) SHA over tag-object SHA for annotated tags', () => {
+  it('captures both tag-object SHA and dereferenced commit SHA for annotated tags', () => {
     const raw = [
       'tagobjA000000000000000000000000000000000000\trefs/tags/v1.0.0',
       'commitAAA0000000000000000000000000000000000\trefs/tags/v1.0.0^{}',
@@ -25,15 +37,27 @@ describe('parseGitLsRemoteOutput', () => {
     ].join('\n');
 
     expect(parseGitLsRemoteOutput(raw)).toEqual([
-      { tag: 'v1.0.0', commitSha: 'commitAAA0000000000000000000000000000000000' },
-      { tag: 'v1.1.0', commitSha: 'commitBBB0000000000000000000000000000000000' },
+      {
+        tag: 'v1.0.0',
+        tagSha: 'tagobjA000000000000000000000000000000000000',
+        commitSha: 'commitAAA0000000000000000000000000000000000',
+      },
+      {
+        tag: 'v1.1.0',
+        tagSha: 'tagobjB000000000000000000000000000000000000',
+        commitSha: 'commitBBB0000000000000000000000000000000000',
+      },
     ]);
   });
 
-  it('handles lightweight tags (no ^{} entry) — bare SHA is already a commit SHA', () => {
+  it('handles lightweight tags (no ^{} entry) — tagSha == commitSha', () => {
     const raw = ['lightSHA00000000000000000000000000000000000\trefs/tags/v1.0.1'].join('\n');
     expect(parseGitLsRemoteOutput(raw)).toEqual([
-      { tag: 'v1.0.1', commitSha: 'lightSHA00000000000000000000000000000000000' },
+      {
+        tag: 'v1.0.1',
+        commitSha: 'lightSHA00000000000000000000000000000000000',
+        tagSha: 'lightSHA00000000000000000000000000000000000',
+      },
     ]);
   });
 
@@ -44,8 +68,16 @@ describe('parseGitLsRemoteOutput', () => {
       'lightSHA00000000000000000000000000000000000\trefs/tags/v1.0.1',
     ].join('\n');
     expect(parseGitLsRemoteOutput(raw)).toEqual([
-      { tag: 'v1.0.0', commitSha: 'commitAAA0000000000000000000000000000000000' },
-      { tag: 'v1.0.1', commitSha: 'lightSHA00000000000000000000000000000000000' },
+      {
+        tag: 'v1.0.0',
+        tagSha: 'tagobjA000000000000000000000000000000000000',
+        commitSha: 'commitAAA0000000000000000000000000000000000',
+      },
+      {
+        tag: 'v1.0.1',
+        commitSha: 'lightSHA00000000000000000000000000000000000',
+        tagSha: 'lightSHA00000000000000000000000000000000000',
+      },
     ]);
   });
 
@@ -63,7 +95,11 @@ describe('parseGitLsRemoteOutput', () => {
       'def456abc123def456abc123def456abc123def45678\trefs/tags/v1.0.0',
     ].join('\n');
     expect(parseGitLsRemoteOutput(raw)).toEqual([
-      { tag: 'v1.0.0', commitSha: 'def456abc123def456abc123def456abc123def45678' },
+      {
+        tag: 'v1.0.0',
+        commitSha: 'def456abc123def456abc123def456abc123def45678',
+        tagSha: 'def456abc123def456abc123def456abc123def45678',
+      },
     ]);
   });
 

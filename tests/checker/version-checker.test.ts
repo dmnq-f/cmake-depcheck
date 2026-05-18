@@ -12,10 +12,10 @@ vi.mock('../../src/checker/git-tags.js', () => ({
  * Used by tests that don't exercise SHA reverse-resolution.
  */
 function tagInfos(tags: string[]): TagInfo[] {
-  return tags.map((tag, i) => ({
-    tag,
-    commitSha: `dummysha${i.toString().padStart(32, '0')}`,
-  }));
+  return tags.map((tag, i) => {
+    const sha = `dummysha${i.toString().padStart(32, '0')}`;
+    return { tag, commitSha: sha, tagSha: sha };
+  });
 }
 
 vi.mock('../../src/checker/github-url.js', async (importOriginal) => {
@@ -415,10 +415,20 @@ describe('checkForUpdates', () => {
       return makeDep({ gitTag: PINNED_SHA, gitTagIsSha: true, ...overrides });
     }
 
+    /** Build a lightweight TagInfo (tagSha === commitSha). */
+    function light(tag: string, sha: string): TagInfo {
+      return { tag, commitSha: sha, tagSha: sha };
+    }
+
+    /** Build an annotated TagInfo with distinct tag-object and commit SHAs. */
+    function annotated(tag: string, tagSha: string, commitSha: string): TagInfo {
+      return { tag, commitSha, tagSha };
+    }
+
     it('matches an upstream tag commit SHA → up-to-date when latest', async () => {
       mockedFetchRemoteTags.mockResolvedValue([
-        { tag: 'v12.0.0', commitSha: 'aaaa000000000000000000000000000000000000' },
-        { tag: 'v12.1.0', commitSha: PINNED_SHA },
+        light('v12.0.0', 'aaaa000000000000000000000000000000000000'),
+        light('v12.1.0', PINNED_SHA),
       ]);
       const [result] = await checkForUpdates([makeSha()]);
       expect(result.status).toBe('up-to-date');
@@ -429,8 +439,8 @@ describe('checkForUpdates', () => {
 
     it('matches an upstream tag → update-available with latestSha when stale', async () => {
       mockedFetchRemoteTags.mockResolvedValue([
-        { tag: 'v12.1.0', commitSha: PINNED_SHA },
-        { tag: 'v12.2.0', commitSha: NEWER_SHA },
+        light('v12.1.0', PINNED_SHA),
+        light('v12.2.0', NEWER_SHA),
       ]);
       const [result] = await checkForUpdates([makeSha()]);
       expect(result.status).toBe('update-available');
@@ -441,11 +451,46 @@ describe('checkForUpdates', () => {
       expect(result.updateType).toBe('minor');
     });
 
-    it('matches the dereferenced ^{} (commit) SHA, not the tag-object SHA', async () => {
-      mockedFetchRemoteTags.mockResolvedValue([{ tag: 'v12.1.0', commitSha: PINNED_SHA }]);
+    it('matches the dereferenced ^{} (commit) SHA of an annotated tag', async () => {
+      const TAG_OBJ_SHA = 'tagobj0000000000000000000000000000000000';
+      mockedFetchRemoteTags.mockResolvedValue([annotated('v12.1.0', TAG_OBJ_SHA, PINNED_SHA)]);
       const [result] = await checkForUpdates([makeSha()]);
       expect(result.status).toBe('up-to-date');
       expect(result.resolvedTag).toBe('v12.1.0');
+    });
+
+    it('also matches the tag-object SHA of an annotated tag (bagel-style pin)', async () => {
+      const COMMIT_SHA = 'commit00000000000000000000000000000000000';
+      mockedFetchRemoteTags.mockResolvedValue([annotated('v12.1.0', PINNED_SHA, COMMIT_SHA)]);
+      const [result] = await checkForUpdates([makeSha()]);
+      expect(result.status).toBe('up-to-date');
+      expect(result.resolvedTag).toBe('v12.1.0');
+    });
+
+    it('preserves tag-object pin style on update — latestSha is the new tag-object SHA', async () => {
+      const OLD_COMMIT = 'oldcommit00000000000000000000000000000000';
+      const NEW_TAG_OBJ = 'newtagobj0000000000000000000000000000000';
+      const NEW_COMMIT = 'newcommit0000000000000000000000000000000';
+      mockedFetchRemoteTags.mockResolvedValue([
+        annotated('v12.1.0', PINNED_SHA, OLD_COMMIT),
+        annotated('v12.2.0', NEW_TAG_OBJ, NEW_COMMIT),
+      ]);
+      const [result] = await checkForUpdates([makeSha()]);
+      expect(result.status).toBe('update-available');
+      expect(result.latestSha).toBe(NEW_TAG_OBJ);
+    });
+
+    it('preserves commit-SHA pin style on update — latestSha is the new commit SHA', async () => {
+      const OLD_TAG_OBJ = 'oldtagobj0000000000000000000000000000000';
+      const NEW_TAG_OBJ = 'newtagobj0000000000000000000000000000000';
+      const NEW_COMMIT = 'newcommit0000000000000000000000000000000';
+      mockedFetchRemoteTags.mockResolvedValue([
+        annotated('v12.1.0', OLD_TAG_OBJ, PINNED_SHA),
+        annotated('v12.2.0', NEW_TAG_OBJ, NEW_COMMIT),
+      ]);
+      const [result] = await checkForUpdates([makeSha()]);
+      expect(result.status).toBe('update-available');
+      expect(result.latestSha).toBe(NEW_COMMIT);
     });
 
     it('SHA matches no upstream tag → pinned (honest)', async () => {
@@ -457,9 +502,7 @@ describe('checkForUpdates', () => {
     });
 
     it('SHA comparison is case-insensitive', async () => {
-      mockedFetchRemoteTags.mockResolvedValue([
-        { tag: 'v12.1.0', commitSha: PINNED_SHA.toUpperCase() },
-      ]);
+      mockedFetchRemoteTags.mockResolvedValue([light('v12.1.0', PINNED_SHA.toUpperCase())]);
       const [result] = await checkForUpdates([makeSha()]);
       expect(result.status).toBe('up-to-date');
       expect(result.resolvedTag).toBe('v12.1.0');
@@ -467,8 +510,8 @@ describe('checkForUpdates', () => {
 
     it('pin-comment short-circuits even when SHA would match a stale tag', async () => {
       mockedFetchRemoteTags.mockResolvedValue([
-        { tag: 'v12.1.0', commitSha: PINNED_SHA },
-        { tag: 'v12.2.0', commitSha: NEWER_SHA },
+        light('v12.1.0', PINNED_SHA),
+        light('v12.2.0', NEWER_SHA),
       ]);
       const [result] = await checkForUpdates([makeSha({ gitTagComment: 'pinned to bugfix XYZ' })]);
       expect(result.status).toBe('pinned');
@@ -479,8 +522,8 @@ describe('checkForUpdates', () => {
 
     it('version-shaped comment does NOT act as a pin indicator', async () => {
       mockedFetchRemoteTags.mockResolvedValue([
-        { tag: 'v12.1.0', commitSha: PINNED_SHA },
-        { tag: 'v12.2.0', commitSha: NEWER_SHA },
+        light('v12.1.0', PINNED_SHA),
+        light('v12.2.0', NEWER_SHA),
       ]);
       const [result] = await checkForUpdates([makeSha({ gitTagComment: '12.1.0' })]);
       expect(result.status).toBe('update-available');

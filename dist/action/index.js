@@ -28831,12 +28831,11 @@ function resolveDependencyVariables(deps, vars) {
 }
 
 /**
- * Parse raw `git ls-remote --tags` output into tag/commit-SHA pairs.
+ * Parse raw `git ls-remote --tags` output into tag/SHA records.
  *
- * For each tag, the dereferenced (`refs/tags/X^{}`) entry wins over the bare
- * `refs/tags/X` entry — annotated tags report the tag-object SHA on the bare
- * ref, but we want the commit SHA. Lightweight tags only have the bare entry,
- * which is already a commit SHA.
+ * For each tag we capture both the bare-ref SHA and the dereferenced
+ * (`refs/tags/X^{}`) SHA when present. Lightweight tags only have the bare
+ * entry; in that case both fields hold the same value (already a commit SHA).
  */
 function parseGitLsRemoteOutput(raw) {
     if (!raw.trim())
@@ -28857,15 +28856,20 @@ function parseGitLsRemoteOutput(raw) {
         const tag = ref.replace('refs/tags/', '').replace(/\^\{\}$/, '');
         const existing = byTag.get(tag);
         if (!existing) {
-            byTag.set(tag, { commitSha: sha, dereferenced });
+            byTag.set(tag, { tagSha: sha, commitSha: sha });
             order.push(tag);
         }
         else if (dereferenced) {
             existing.commitSha = sha;
-            existing.dereferenced = true;
+        }
+        else {
+            existing.tagSha = sha;
         }
     }
-    return order.map((tag) => ({ tag, commitSha: byTag.get(tag).commitSha }));
+    return order.map((tag) => {
+        const entry = byTag.get(tag);
+        return { tag, commitSha: entry.commitSha, tagSha: entry.tagSha };
+    });
 }
 /**
  * Fetch all tags (paired with commit SHAs) from a remote git repository via
@@ -32115,16 +32119,19 @@ async function checkForUpdates(deps, onProgress, options = {}) {
             continue;
         }
         const tagInfos = repoTags.get(repoUrl) ?? [];
-        // SHA reverse-resolution: find the upstream tag whose commit SHA matches the pinned SHA
+        // SHA reverse-resolution: find the upstream tag whose SHA matches the pinned SHA.
+        // Accept either the commit SHA or the tag-object SHA — users pin either convention.
         let resolvedTag;
+        let pinStyle = 'commit';
         if (isShaPinned) {
             const pinnedSha = dep.gitTag.toLowerCase();
-            const match = tagInfos.find((t) => t.commitSha.toLowerCase() === pinnedSha);
+            const match = tagInfos.find((t) => t.commitSha.toLowerCase() === pinnedSha || t.tagSha.toLowerCase() === pinnedSha);
             if (!match) {
                 results.set(dep, { dep, status: 'pinned', versionSource: 'sha' });
                 continue;
             }
             resolvedTag = match.tag;
+            pinStyle = match.tagSha.toLowerCase() === pinnedSha ? 'tag' : 'commit';
         }
         const currentTag = resolvedTag ?? (ghInfo ? ghInfo.tag : dep.gitTag);
         const tags = tagInfos.map((t) => t.tag);
@@ -32191,10 +32198,13 @@ async function checkForUpdates(deps, onProgress, options = {}) {
             });
         }
         else {
-            // Git dep (literal tag OR SHA-resolved) with an available update
-            const latestSha = isShaPinned
-                ? tagInfos.find((t) => t.tag === versionResult.latest)?.commitSha
-                : undefined;
+            // Git dep (literal tag OR SHA-resolved) with an available update.
+            // For SHA-resolved deps, preserve the user's pin convention (commit vs tag-object SHA).
+            let latestSha;
+            if (isShaPinned) {
+                const latestInfo = tagInfos.find((t) => t.tag === versionResult.latest);
+                latestSha = pinStyle === 'tag' ? latestInfo?.tagSha : latestInfo?.commitSha;
+            }
             results.set(dep, {
                 dep,
                 status: 'update-available',
