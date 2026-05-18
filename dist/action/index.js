@@ -28410,6 +28410,49 @@ function stripComments(text) {
         .join('\n');
 }
 /**
+ * Find the first line within `[startLine, endLine]` of `content` that contains
+ * `needle`, and extract its trailing comment.
+ *
+ * Returns `{ comment, raw }` where `comment` is the body after `#` (trimmed)
+ * and `raw` is the full tail from the whitespace immediately before `#`
+ * through end of line (trailing whitespace trimmed). `raw` is anchored to the
+ * line's `#` — any non-whitespace text between the needle and `#` (e.g. the
+ * closing `")` of a `set()` call) is not included.
+ *
+ * Returns `undefined` when no line within the range contains `needle` or the
+ * matching line has no `#` comment. Lines are 1-based; `endLine` is inclusive.
+ */
+function trailingCommentOnLineContaining(content, needle, startLine, endLine) {
+    const lines = content.split('\n');
+    const last = Math.min(endLine, lines.length);
+    for (let i = Math.max(1, startLine) - 1; i < last; i++) {
+        const line = lines[i];
+        if (line.indexOf(needle) === -1)
+            continue;
+        const hashIdx = line.indexOf('#');
+        if (hashIdx === -1)
+            return undefined;
+        const beforeHash = line.substring(0, hashIdx);
+        const wsMatch = beforeHash.match(/\s+$/);
+        const wsStart = wsMatch ? hashIdx - wsMatch[0].length : hashIdx;
+        const raw = line.substring(wsStart).replace(/\s+$/, '');
+        const comment = line.substring(hashIdx + 1).trim();
+        return { comment, raw };
+    }
+    return undefined;
+}
+/**
+ * Returns true when the comment contains an explicit pin indicator
+ * (`pin`, `pinned`, or `pinning` as a standalone word, case-insensitive).
+ *
+ * Used to let maintainers deliberately freeze a SHA-pinned dep via the
+ * trailing comment without disabling SHA resolution globally. Word boundaries
+ * prevent false positives on `pinpoint`, `endpoint`, `spinning`, etc.
+ */
+function commentIndicatesPin(comment) {
+    return /\b(pin|pinned|pinning)\b/i.test(comment);
+}
+/**
  * Tokenize CMake arguments. Handles quoted and unquoted args,
  * line continuations (backslash at EOL).
  */
@@ -28511,6 +28554,13 @@ function parseCMakeContent(content, filePath) {
         const isPopulate = match[1].toLowerCase() === 'populate';
         if (isPopulate && !dep.gitRepository && !dep.url)
             continue;
+        if (dep.gitTag !== undefined) {
+            const trailing = trailingCommentOnLineContaining(content, dep.gitTag, startLine, endLine);
+            if (trailing) {
+                dep.gitTagComment = trailing.comment;
+                dep.gitTagCommentRaw = trailing.raw;
+            }
+        }
         deps.push(dep);
     }
     return deps;
@@ -28615,7 +28665,14 @@ function extractSetCalls(content, vars, filePath) {
             value = resolved;
         }
         const line = lineNumberAt(content, match.index);
-        vars.set(varName, { value, file: filePath, line });
+        const setEndLine = lineNumberAt(content, closeIdx);
+        const trailing = trailingCommentOnLineContaining(content, tokens[1], line, setEndLine);
+        const info = { value, file: filePath, line };
+        if (trailing) {
+            info.hint = trailing.comment;
+            info.hintRaw = trailing.raw;
+        }
+        vars.set(varName, info);
     }
 }
 /**
@@ -28748,9 +28805,17 @@ function resolveDependencyVariables(deps, vars) {
             dep.gitRepository = resolveVariables(dep.gitRepository, vars) ?? dep.gitRepository;
         }
         if (dep.gitTag?.includes('${')) {
+            const varName = dep.gitTag.match(/\$\{(\w+)\}/)?.[1];
             dep.gitTagRaw = dep.gitTag;
             dep.gitTag = resolveVariables(dep.gitTag, vars) ?? dep.gitTag;
             dep.gitTagIsSha = SHA_PATTERN.test(dep.gitTag);
+            if (varName && dep.gitTagComment === undefined) {
+                const info = vars.get(varName);
+                if (info?.hint !== undefined) {
+                    dep.gitTagComment = info.hint;
+                    dep.gitTagCommentRaw = info.hintRaw;
+                }
+            }
         }
         if (dep.url?.includes('${')) {
             dep.urlRaw = dep.url;
@@ -28766,31 +28831,45 @@ function resolveDependencyVariables(deps, vars) {
 }
 
 /**
- * Parse raw `git ls-remote --tags` output into an array of tag names.
- * Filters out `^{}` dereference entries and deduplicates.
+ * Parse raw `git ls-remote --tags` output into tag/commit-SHA pairs.
+ *
+ * For each tag, the dereferenced (`refs/tags/X^{}`) entry wins over the bare
+ * `refs/tags/X` entry — annotated tags report the tag-object SHA on the bare
+ * ref, but we want the commit SHA. Lightweight tags only have the bare entry,
+ * which is already a commit SHA.
  */
 function parseGitLsRemoteOutput(raw) {
     if (!raw.trim())
         return [];
-    const tags = new Set();
+    const order = [];
+    const byTag = new Map();
     for (const line of raw.split('\n')) {
         if (!line.trim())
             continue;
         const parts = line.split('\t');
         if (parts.length < 2)
             continue;
+        const sha = parts[0];
         const ref = parts[1];
         if (!ref.startsWith('refs/tags/'))
             continue;
-        if (ref.endsWith('^{}'))
-            continue;
-        tags.add(ref.replace('refs/tags/', ''));
+        const dereferenced = ref.endsWith('^{}');
+        const tag = ref.replace('refs/tags/', '').replace(/\^\{\}$/, '');
+        const existing = byTag.get(tag);
+        if (!existing) {
+            byTag.set(tag, { commitSha: sha, dereferenced });
+            order.push(tag);
+        }
+        else if (dereferenced) {
+            existing.commitSha = sha;
+            existing.dereferenced = true;
+        }
     }
-    return [...tags];
+    return order.map((tag) => ({ tag, commitSha: byTag.get(tag).commitSha }));
 }
 /**
- * Fetch all tags from a remote git repository via `git ls-remote --tags`.
- * Times out after 15 seconds.
+ * Fetch all tags (paired with commit SHAs) from a remote git repository via
+ * `git ls-remote --tags`. Times out after 15 seconds.
  */
 function fetchRemoteTags(repoUrl) {
     return new Promise((resolve, reject) => {
@@ -29024,7 +29103,7 @@ function requireRe () {
 		createToken('GTLT', '((?:<|>)?=?)');
 
 		// Something like "2.*" or "1.2.x".
-		// Note that "x.x" is a valid xRange identifer, meaning "any version"
+		// Note that "x.x" is a valid xRange identifier, meaning "any version"
 		// Only the first item is strictly required.
 		createToken('XRANGEIDENTIFIERLOOSE', `${src[t.NUMERICIDENTIFIERLOOSE]}|x|X|\\*`);
 		createToken('XRANGEIDENTIFIER', `${src[t.NUMERICIDENTIFIER]}|x|X|\\*`);
@@ -30018,6 +30097,62 @@ function requireCoerce () {
 	};
 	coerce_1 = coerce;
 	return coerce_1;
+}
+
+var truncate_1;
+var hasRequiredTruncate;
+
+function requireTruncate () {
+	if (hasRequiredTruncate) return truncate_1;
+	hasRequiredTruncate = 1;
+
+	const parse = requireParse();
+	const constants = requireConstants();
+	const SemVer = requireSemver$1();
+
+	const truncate = (version, truncation, options) => {
+	  if (!constants.RELEASE_TYPES.includes(truncation)) {
+	    return null
+	  }
+
+	  const clonedVersion = cloneInputVersion(version, options);
+	  return clonedVersion && doTruncation(clonedVersion, truncation)
+	};
+
+	const cloneInputVersion = (version, options) => {
+	  const versionStringToParse = (
+	    version instanceof SemVer ? version.version : version
+	  );
+
+	  return parse(versionStringToParse, options)
+	};
+
+	const doTruncation = (version, truncation) => {
+	  if (isPrerelease(truncation)) {
+	    return version.version
+	  }
+
+	  version.prerelease = [];
+
+	  switch (truncation) {
+	    case 'major':
+	      version.minor = 0;
+	      version.patch = 0;
+	      break
+	    case 'minor':
+	      version.patch = 0;
+	      break
+	  }
+
+	  return version.format()
+	};
+
+	const isPrerelease = (type) => {
+	  return type.startsWith('pre')
+	};
+
+	truncate_1 = truncate;
+	return truncate_1;
 }
 
 var lrucache;
@@ -31469,6 +31604,7 @@ function requireSemver () {
 	const lte = requireLte();
 	const cmp = requireCmp();
 	const coerce = requireCoerce();
+	const truncate = requireTruncate();
 	const Comparator = requireComparator();
 	const Range = requireRange();
 	const satisfies = requireSatisfies();
@@ -31507,6 +31643,7 @@ function requireSemver () {
 	  lte,
 	  cmp,
 	  coerce,
+	  truncate,
 	  Comparator,
 	  Range,
 	  satisfies,
@@ -31701,6 +31838,28 @@ function findLatestVersion(currentTag, allTags) {
         return null;
     return trySemver(currentTag, allTags) ?? tryPrefixBased(currentTag, allTags);
 }
+/**
+ * Find the first version-shaped token in a freeform string (e.g. a trailing
+ * comment). Returns the substring that parses as semver (`14.1.0`, `v14.1.0`)
+ * or has a recognizable version prefix followed by digits (`VER-2-14-3`,
+ * `release-1.0`). Returns null when no version-shaped token is present.
+ *
+ * Used only by PR-edit construction to know which substring inside a trailing
+ * comment to replace alongside a SHA rewrite. Not part of the detection path
+ * — comments are never used to drive update checking.
+ */
+function findVersionTokenInComment(comment) {
+    for (const token of comment.split(/\s+/)) {
+        if (!token)
+            continue;
+        if (parseSemver(token))
+            return token;
+        const prefix = extractPrefix(token);
+        if (prefix && /\d/.test(token.substring(prefix.length)))
+            return token;
+    }
+    return null;
+}
 
 const COMPOUND_EXTENSIONS = ['.tar.gz', '.tar.bz2', '.tar.xz'];
 /**
@@ -31849,9 +32008,9 @@ async function pool(items, concurrency, fn) {
  * Check all dependencies for available updates.
  * Pre-classifies skip cases, deduplicates by repo URL, and fetches tags concurrently.
  */
-async function checkForUpdates(deps, onProgress) {
+async function checkForUpdates(deps, onProgress, options = {}) {
+    const resolveSha = options.resolveSha !== false;
     const results = new Map();
-    // Track GitHub URL info for URL deps that need checking
     const urlGitHubInfo = new Map();
     // Pre-classify deps that don't need a network check
     const needsCheck = [];
@@ -31859,10 +32018,15 @@ async function checkForUpdates(deps, onProgress) {
         if (dep.sourceType === 'url') {
             const ghInfo = dep.url ? extractGitHubUrlInfo(dep.url) : null;
             if (!ghInfo) {
-                results.set(dep, { dep, status: 'unsupported' });
+                results.set(dep, { dep, status: 'unsupported', versionSource: 'url' });
             }
             else if (SHA_PATTERN.test(ghInfo.tag)) {
-                results.set(dep, { dep, status: 'pinned', resolvedVersion: ghInfo.tag });
+                results.set(dep, {
+                    dep,
+                    status: 'pinned',
+                    versionSource: 'url',
+                    resolvedVersion: ghInfo.tag,
+                });
             }
             else {
                 urlGitHubInfo.set(dep, ghInfo);
@@ -31870,16 +32034,26 @@ async function checkForUpdates(deps, onProgress) {
             }
         }
         else if (!dep.gitTag) {
-            results.set(dep, { dep, status: 'unpinned' });
+            results.set(dep, { dep, status: 'unpinned', versionSource: 'git-tag' });
         }
         else if (dep.gitTagIsSha) {
-            results.set(dep, { dep, status: 'pinned' });
+            if (!resolveSha || !dep.gitRepository) {
+                results.set(dep, { dep, status: 'pinned', versionSource: 'sha' });
+            }
+            else {
+                needsCheck.push(dep);
+            }
         }
         else if (dep.gitTag.includes('${')) {
-            results.set(dep, { dep, status: 'unresolved-variable' });
+            results.set(dep, { dep, status: 'unresolved-variable', versionSource: 'git-tag' });
         }
         else if (!dep.gitRepository) {
-            results.set(dep, { dep, status: 'check-failed', error: 'No git repository URL' });
+            results.set(dep, {
+                dep,
+                status: 'check-failed',
+                versionSource: 'git-tag',
+                error: 'No git repository URL',
+            });
         }
         else {
             needsCheck.push(dep);
@@ -31918,25 +32092,51 @@ async function checkForUpdates(deps, onProgress) {
     for (const dep of needsCheck) {
         const ghInfo = urlGitHubInfo.get(dep);
         const repoUrl = ghInfo ? ghInfo.repoUrl : dep.gitRepository;
-        const currentTag = ghInfo ? ghInfo.tag : dep.gitTag;
+        const isShaPinned = !ghInfo && dep.gitTagIsSha === true;
+        const versionSource = ghInfo
+            ? 'url'
+            : isShaPinned
+                ? 'sha'
+                : 'git-tag';
+        // Per-dep pin-comment escape hatch: maintainer marked this SHA as deliberately frozen
+        if (isShaPinned && dep.gitTagComment !== undefined && commentIndicatesPin(dep.gitTagComment)) {
+            results.set(dep, { dep, status: 'pinned', versionSource: 'sha' });
+            continue;
+        }
         const error = repoErrors.get(repoUrl);
         if (error) {
             results.set(dep, {
                 dep,
                 status: 'check-failed',
+                versionSource,
                 error,
                 ...(ghInfo && { resolvedVersion: ghInfo.tag }),
             });
             continue;
         }
-        const tags = repoTags.get(repoUrl) ?? [];
+        const tagInfos = repoTags.get(repoUrl) ?? [];
+        // SHA reverse-resolution: find the upstream tag whose commit SHA matches the pinned SHA
+        let resolvedTag;
+        if (isShaPinned) {
+            const pinnedSha = dep.gitTag.toLowerCase();
+            const match = tagInfos.find((t) => t.commitSha.toLowerCase() === pinnedSha);
+            if (!match) {
+                results.set(dep, { dep, status: 'pinned', versionSource: 'sha' });
+                continue;
+            }
+            resolvedTag = match.tag;
+        }
+        const currentTag = resolvedTag ?? (ghInfo ? ghInfo.tag : dep.gitTag);
+        const tags = tagInfos.map((t) => t.tag);
         const versionResult = findLatestVersion(currentTag, tags);
         if (!versionResult) {
             results.set(dep, {
                 dep,
                 status: 'check-failed',
+                versionSource,
                 error: 'No comparable tags found',
                 ...(ghInfo && { resolvedVersion: ghInfo.tag }),
+                ...(resolvedTag && { resolvedTag }),
             });
             continue;
         }
@@ -31944,8 +32144,10 @@ async function checkForUpdates(deps, onProgress) {
             results.set(dep, {
                 dep,
                 status: 'up-to-date',
+                versionSource,
                 latestVersion: versionResult.latest,
                 ...(ghInfo && { resolvedVersion: ghInfo.tag }),
+                ...(resolvedTag && { resolvedTag }),
             });
         }
         else if (ghInfo) {
@@ -31959,6 +32161,7 @@ async function checkForUpdates(deps, onProgress) {
                         results.set(dep, {
                             dep,
                             status: 'check-failed',
+                            versionSource,
                             error: `Release asset not found at expected URL for ${versionResult.latest}`,
                             resolvedVersion: ghInfo.tag,
                         });
@@ -31969,6 +32172,7 @@ async function checkForUpdates(deps, onProgress) {
                     results.set(dep, {
                         dep,
                         status: 'check-failed',
+                        versionSource,
                         error: err instanceof Error ? err.message : String(err),
                         resolvedVersion: ghInfo.tag,
                     });
@@ -31978,6 +32182,7 @@ async function checkForUpdates(deps, onProgress) {
             results.set(dep, {
                 dep,
                 status: 'update-available',
+                versionSource,
                 latestVersion: versionResult.latest,
                 updateType: versionResult.updateType,
                 updatedUrl: candidateUrl,
@@ -31986,11 +32191,18 @@ async function checkForUpdates(deps, onProgress) {
             });
         }
         else {
+            // Git dep (literal tag OR SHA-resolved) with an available update
+            const latestSha = isShaPinned
+                ? tagInfos.find((t) => t.tag === versionResult.latest)?.commitSha
+                : undefined;
             results.set(dep, {
                 dep,
                 status: 'update-available',
+                versionSource,
                 latestVersion: versionResult.latest,
                 updateType: versionResult.updateType,
+                ...(resolvedTag && { resolvedTag }),
+                ...(latestSha && { latestSha }),
                 intermediateTags: findIntermediateTags(currentTag, versionResult.latest, tags),
             });
         }
@@ -32076,7 +32288,9 @@ async function scan(options) {
     }
     let updateResults;
     if (!options.scanOnly) {
-        updateResults = await checkForUpdates(deps, options.onProgress);
+        updateResults = await checkForUpdates(deps, options.onProgress, {
+            resolveSha: options.resolveSha,
+        });
     }
     let filteredCount = 0;
     if (options.updateTypes && updateResults) {
@@ -37100,8 +37314,34 @@ function computeEdit(result, vars) {
             newText: newVersion,
         };
     }
-    // Case 2: Git dep with literal GIT_TAG
-    if (dep.sourceType === 'git' && dep.gitTag && result.latestVersion) {
+    // Case 2a: SHA-resolved git dep — rewrite SHA and any version token in the trailing comment
+    if (dep.sourceType === 'git' &&
+        dep.gitTagIsSha &&
+        dep.gitTag &&
+        result.versionSource === 'sha' &&
+        result.latestSha) {
+        const oldFragment = dep.gitTagCommentRaw ?? '';
+        let newFragment = oldFragment;
+        if (oldFragment) {
+            const oldToken = findVersionTokenInComment(oldFragment);
+            if (oldToken && result.latestVersion) {
+                const newToken = alignPrefix(oldToken, result.latestVersion);
+                newFragment = oldFragment.replace(oldToken, newToken);
+            }
+        }
+        return {
+            file: dep.location.file,
+            line: dep.location.startLine,
+            endLine: dep.location.endLine,
+            oldText: dep.gitTag + oldFragment,
+            newText: result.latestSha + newFragment,
+        };
+    }
+    // Case 2: Git dep with literal GIT_TAG (non-SHA — SHA-resolved deps are handled in case 2a)
+    if (dep.sourceType === 'git' &&
+        dep.gitTag &&
+        result.latestVersion &&
+        result.versionSource !== 'sha') {
         const newVersion = alignPrefix(dep.gitTag, result.latestVersion);
         if (newVersion === dep.gitTag)
             return null;
@@ -37777,12 +38017,14 @@ async function run() {
     const ignore = parseMultiLineInput(getInput('ignore'));
     const updateTypesRaw = getInput('update-types');
     const updateTypes = updateTypesRaw ? parseUpdateTypes(updateTypesRaw) : undefined;
+    const resolveSha = getInput('resolve-sha') !== 'false';
     const result = await scan({
         path: inputPath,
         scanOnly,
         excludePatterns: exclude.length > 0 ? exclude.map((p) => new RegExp(p)) : undefined,
         ignoreNames: ignore.length > 0 ? ignore : undefined,
         updateTypes,
+        resolveSha,
     });
     // Annotations
     if (result.updateResults) {
